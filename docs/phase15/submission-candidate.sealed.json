@@ -1,10 +1,10 @@
 {
   "schemaVersion": 1,
   "phaseId": "phase-15",
-  "submissionRound": 12,
+  "submissionRound": 13,
   "submittedBy": "phase15-worker-codex-01",
   "baseCommitSha": "c45c66107e6740c73a490eab5b015f6afbf0d3a1",
-  "candidateCommitSha": "95706bf8475dc28d499c5503f5c345bcaa3ae7e9",
+  "candidateCommitSha": "6407182101ef75177f2366258f2b8652da1789e2",
   "files": [
     {
       "path": "AI_Manager_Multi_Agent_Discord_Advanced_Spec_v1.1.md",
@@ -70,7 +70,7 @@
       "path": "scripts/verify-readiness.js",
       "type": "file",
       "mode": "100644",
-      "sha256": "sha256:c79deb3da2b0a82b8761ac49369d7d20c4917ae85a07ec4e9ef4b7420f9f4700"
+      "sha256": "sha256:591b2fff62469631c48f256a04b2a6bd7910e9271149b7b1ac91358b2424df60"
     },
     {
       "path": "services/shell.js",
@@ -178,31 +178,37 @@
       "path": "bot-runtime.js",
       "type": "file",
       "mode": "100644",
-      "sha256": "sha256:a665b8d7b9bfc10fc1fb4ddefac4c16a722e4eda644a3c6eeed789a923b72b2b"
+      "sha256": "sha256:3e572c0b56f61416001144da3ff2cbc7edfc1f9a6b14e99f88a02be7fa589b49"
     },
     {
       "path": ".env.bot-a.example",
       "type": "file",
       "mode": "100644",
-      "sha256": "sha256:c924d8c264c02b0a3b5b5f45ede34ec60a774d5e06343d1dddf7d25779c39d9b"
+      "sha256": "sha256:079243c107f5b67c5937cef3b0707fd0fc15aa8892854697be3cc4831f14a34a"
     },
     {
       "path": ".env.bot-b.example",
       "type": "file",
       "mode": "100644",
-      "sha256": "sha256:cd0a48a88a3d2c760f18b81907fb9c757cd7443ac96c215735455d2dde067a20"
+      "sha256": "sha256:aef264b2eca256cc46b2b7c8b67ca1b7f8f9795aaf6ba1cca98ee7cee4f3d261"
     },
     {
       "path": "docs/channel-adapters.md",
       "type": "file",
       "mode": "100644",
-      "sha256": "sha256:d91254a1fda3f27db8978d26a18989bb31e783e17b1df68fc399d573796e24c2"
+      "sha256": "sha256:bd72007f9c5389860d12dbe4839d5375ca1946a2a2894c13392c1bf2314de7cc"
     },
     {
       "path": "scripts/channel-credentials.js",
       "type": "file",
       "mode": "100644",
       "sha256": "sha256:3242a83c59eb8845653025ea64357dcee72dcd826566f35e6e9b8e44636d1401"
+    },
+    {
+      "path": "scripts/run-multibot.js",
+      "type": "file",
+      "mode": "100644",
+      "sha256": "sha256:35edcaefd1da6c41ed70e66317ff48b230a4698caac8eb21734cb89568a3f2a9"
     },
     {
       "path": "src/channels/channelAdapter.js",
@@ -232,7 +238,7 @@
       "path": "test/phase15/channelCredentialService.test.js",
       "type": "file",
       "mode": "100644",
-      "sha256": "sha256:27152bc0324cb2d45078dbf90e333ed0ac9f9bc80ea0fbe94e91409a80084c6a"
+      "sha256": "sha256:b73f78f07ddb391434e1208b58cba9409214688c105cabae491124cf9cab8de7"
     }
   ],
   "migrationArtifacts": [

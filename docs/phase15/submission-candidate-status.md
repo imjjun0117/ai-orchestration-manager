@@ -2,10 +2,10 @@
 
 - Candidate manifest: `submission-candidate.sealed.json`
 - Pre-attestation draft: `submission-candidate.unsealed.json`
-- Candidate round: `12` (guided role-based bot startup)
-- Canonical bundle hash: `sha256:2b266cdd6b69eef929ee292e8e9a5b986b11f6fbbeb6de49ec9a5a3207adf3d1`
+- Candidate round: `13` (database-only role credential runtime)
+- Canonical bundle hash: `sha256:29d928f1c729802ab5592bd0d49232b6ae2986cbfd603f4a2f5200f8c25b20bc`
 - Base commit: `c45c66107e6740c73a490eab5b015f6afbf0d3a1`
-- Candidate commit: `95706bf8475dc28d499c5503f5c345bcaa3ae7e9`
+- Candidate commit: `6407182101ef75177f2366258f2b8652da1789e2`
 - Submitted by: `phase15-worker-codex-01`
 - State: `SEALED_PENDING_SIGNED_VALIDATION`
 - Database submission row: not created
