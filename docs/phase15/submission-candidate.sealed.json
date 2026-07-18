@@ -1,0 +1,225 @@
+{
+  "schemaVersion": 1,
+  "phaseId": "phase-15",
+  "submissionRound": 3,
+  "submittedBy": "phase15-worker-codex-01",
+  "baseCommitSha": "c45c66107e6740c73a490eab5b015f6afbf0d3a1",
+  "candidateCommitSha": "d7693a8103041cd482c9de81b9dd86b3fac71432",
+  "files": [
+    {
+      "path": "AI_Manager_Multi_Agent_Discord_Advanced_Spec_v1.1.md",
+      "sha256": "sha256:b650b7b8ef16635a64dba2b4b6b187947d52172c2965c903ad6c6efd747bd572",
+      "mode": "100644",
+      "type": "file"
+    },
+    {
+      "path": "docker-compose.yml",
+      "sha256": "sha256:b178fdd5ad8296bc2e38bfc18f9742dad103da103d9a78f6f0d4498fccfd018a",
+      "mode": "100644",
+      "type": "file"
+    },
+    {
+      "path": "docs/phase15/delivery-governance.md",
+      "sha256": "sha256:dd0cbb919c6e7f69736758ca6281e4c4ccf73d908c065a7bac080c28ac12edb1",
+      "mode": "100644",
+      "type": "file"
+    },
+    {
+      "path": "docs/phase15/known-issues.md",
+      "sha256": "sha256:26bd56b6ecafee4bc0eab10394e63d2a88a4fdb10bce2cd671b9f348319fe9e6",
+      "mode": "100644",
+      "type": "file"
+    },
+    {
+      "path": "docs/phase15/requirements-trace.md",
+      "sha256": "sha256:41853353ae7029af8435fc7b31d2a5b77a4889c96806b8288290028f7e13c0c5",
+      "mode": "100644",
+      "type": "file"
+    },
+    {
+      "path": "docs/phase15/rework-findings.md",
+      "sha256": "sha256:eb0a37d235c5e7abc5619352c223b4a33674d9f71dc870db899bbfd62c92bd59",
+      "mode": "100644",
+      "type": "file"
+    },
+    {
+      "path": "docs/phase15/rollback-plan.md",
+      "sha256": "sha256:08b30627269f3fcf8bea21d4e1a764f9cf148292e7ffb0f4f3f5685339b05265",
+      "mode": "100644",
+      "type": "file"
+    },
+    {
+      "path": "docs/phase15/verification-evidence.md",
+      "sha256": "sha256:af5a2136e958bfb9b3b2a6d2322b449d049e41b2fd54af749812f5abd6a1701a",
+      "mode": "100644",
+      "type": "file"
+    },
+    {
+      "path": "package.json",
+      "sha256": "sha256:e63e9778ff477934e9d2265e8d656edb29425bc29e29df9f94fc31677b345589",
+      "mode": "100644",
+      "type": "file"
+    },
+    {
+      "path": "scripts/phase15-governance.js",
+      "sha256": "sha256:eefa8ab48304cf8c0722141b59d14c59708225f4efb0e2967517c2d3ce44a509",
+      "mode": "100644",
+      "type": "file"
+    },
+    {
+      "path": "scripts/verify-readiness.js",
+      "sha256": "sha256:a887f1c48daab707208145c571bc980ef39d4af4136908c1fb0bcb8590a4b9b4",
+      "mode": "100644",
+      "type": "file"
+    },
+    {
+      "path": "src/db/migrationRunner.js",
+      "sha256": "sha256:db6ad91a40cae247fc48b2386a2e9911f7493151e52f184feeeaae481456b066",
+      "mode": "100644",
+      "type": "file"
+    },
+    {
+      "path": "src/delivery/canonicalSubmissionManifest.js",
+      "sha256": "sha256:4a42473f10959be919e3cdc27190cc00d8e632b30259d40a135c85b5b1618210",
+      "mode": "100644",
+      "type": "file"
+    },
+    {
+      "path": "src/delivery/deliveryBootstrapService.js",
+      "sha256": "sha256:5d8b97c0c9498ea6745843bd2af8509a1a1a8a8f2363630ef627140576d60a5d",
+      "mode": "100644",
+      "type": "file"
+    },
+    {
+      "path": "src/delivery/deliveryDb.js",
+      "sha256": "sha256:2da47a4fc941b3c45c07b072ed776c9e57c7b432d0e52af381064443b1b375e6",
+      "mode": "100644",
+      "type": "file"
+    },
+    {
+      "path": "src/delivery/index.js",
+      "sha256": "sha256:713f24b3e5dc3117be0286817838508828a9b493850a8fab549e3beee2f4ab15",
+      "mode": "100644",
+      "type": "file"
+    },
+    {
+      "path": "src/delivery/phaseAssignmentPolicy.js",
+      "sha256": "sha256:36c5c0313121df510d653b50647ecc8e5e93d060d6f0b539623bf7ffe75fb288",
+      "mode": "100644",
+      "type": "file"
+    },
+    {
+      "path": "src/delivery/phaseFindingService.js",
+      "sha256": "sha256:81e2eb91e5b66813d945d786c169899d9a52dce8a9c0ca0cd1a0f71d3e0f9844",
+      "mode": "100644",
+      "type": "file"
+    },
+    {
+      "path": "src/delivery/phaseGateService.js",
+      "sha256": "sha256:43b4bf6cd3e161f71d7e222b44f84af2f503d1177bd47a295941dfa7abc25be8",
+      "mode": "100644",
+      "type": "file"
+    },
+    {
+      "path": "src/delivery/phaseService.js",
+      "sha256": "sha256:8d79b0f3d0bef0f084fd65da32ea542f408e318ce709693445cae0214f1a69d9",
+      "mode": "100644",
+      "type": "file"
+    },
+    {
+      "path": "src/delivery/phaseSubmissionService.js",
+      "sha256": "sha256:449f581c5cde6f77a910f0a525f3b8cd9e5f78770bf65a430dcdfddfe2d83973",
+      "mode": "100644",
+      "type": "file"
+    },
+    {
+      "path": "src/delivery/phaseValidationService.js",
+      "sha256": "sha256:9bc1f3514e28240cc4ce4c80f4fbfa03769dfb534fe3d1232ab09590134b1fd0",
+      "mode": "100644",
+      "type": "file"
+    },
+    {
+      "path": "test/phase15/canonicalSubmissionManifest.test.js",
+      "sha256": "sha256:19e5739418e7affefac28c560cdcab229697ed49e9da43fcdcb6a1412097fc88",
+      "mode": "100644",
+      "type": "file"
+    },
+    {
+      "path": "test/phase15/databaseIntegration.test.js",
+      "sha256": "sha256:3ead28f01ec3190af45cdcba943b505be3e5da29f74156937d669be502fe0bbe",
+      "mode": "100644",
+      "type": "file"
+    },
+    {
+      "path": "test/phase15/deliveryBootstrapService.test.js",
+      "sha256": "sha256:2a814dd6affc2cde9f04e90c70cde7f6d7a8c7917189a90137ae6cd2ab7f603e",
+      "mode": "100644",
+      "type": "file"
+    },
+    {
+      "path": "test/phase15/phaseAssignmentPolicy.test.js",
+      "sha256": "sha256:7136676e50a8adc13f2630c004eb069cf6e9b31cb2505a8d1f9baeac7bd12ddc",
+      "mode": "100644",
+      "type": "file"
+    }
+  ],
+  "migrationArtifacts": [
+    {
+      "path": "src/db/migrations/015_delivery_governance.down.sql",
+      "sha256": "sha256:5ad5876a6e474bf239c21f7df378e8466f0847c7d2ffcf19771da0718d895491",
+      "mode": "100644",
+      "type": "file"
+    },
+    {
+      "path": "src/db/migrations/015_delivery_governance.up.sql",
+      "sha256": "sha256:39b410f974ba07f723eaa0a59f0993ea6fd754af703e1a16ec1b65104d09721e",
+      "mode": "100644",
+      "type": "file"
+    },
+    {
+      "path": "src/db/migrations/015_delivery_governance_operations.down.sql",
+      "sha256": "sha256:fc70d0df1fe13b923b8f96b8443fec797fa0ddf2608a529737dfb7b3e0beb790",
+      "mode": "100644",
+      "type": "file"
+    },
+    {
+      "path": "src/db/migrations/015_delivery_governance_operations.up.sql",
+      "sha256": "sha256:23b76dc1f805b0bcc0d196dc17b1e923f8634fd7cb6fb29a17e4584cdfa2cead",
+      "mode": "100644",
+      "type": "file"
+    },
+    {
+      "path": "src/db/migrations/015_delivery_governance_rework.down.sql",
+      "sha256": "sha256:31ce3ab54c32f8c202b90c556c128b0dc45c48cc67cbfefb0561184e3ab20903",
+      "mode": "100644",
+      "type": "file"
+    },
+    {
+      "path": "src/db/migrations/015_delivery_governance_rework.up.sql",
+      "sha256": "sha256:13ebef15f2ed76d52f8b887ccc7b3e018dd9eb57146f980fc727ad10d0ed84db",
+      "mode": "100644",
+      "type": "file"
+    },
+    {
+      "path": "src/db/migrations/015_delivery_governance_security.down.sql",
+      "sha256": "sha256:557cd632b36f8f76bbc63869573fd07d773d23f7c41ab3c3605dd4a443d6ac39",
+      "mode": "100644",
+      "type": "file"
+    },
+    {
+      "path": "src/db/migrations/015_delivery_governance_security.up.sql",
+      "sha256": "sha256:b31614a1386c3f14c5698bcf9728307b0bac9edcef4427322c71a163bb09b3b3",
+      "mode": "100644",
+      "type": "file"
+    }
+  ],
+  "testEvidence": [
+    {
+      "id": "phase15-rework-verification-evidence",
+      "sha256": "sha256:af5a2136e958bfb9b3b2a6d2322b449d049e41b2fd54af749812f5abd6a1701a"
+    }
+  ],
+  "requirementsTraceHash": "sha256:41853353ae7029af8435fc7b31d2a5b77a4889c96806b8288290028f7e13c0c5",
+  "rollbackPlanHash": "sha256:08b30627269f3fcf8bea21d4e1a764f9cf148292e7ffb0f4f3f5685339b05265",
+  "knownIssuesHash": "sha256:26bd56b6ecafee4bc0eab10394e63d2a88a4fdb10bce2cd671b9f348319fe9e6"
+}
