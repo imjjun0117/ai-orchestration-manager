@@ -2159,7 +2159,11 @@ channelAdapter.onMessage(async (message) => {
 
 async function resolveDiscordToken() {
   if (process.env.DISCORD_TOKEN) return process.env.DISCORD_TOKEN;
-  return channelCredentialService.getToken({ channelType: "discord", botInstanceId: BOT_INSTANCE_ID });
+  try {
+    return await channelCredentialService.getToken({ channelType: "discord", botInstanceId: BOT_INSTANCE_ID });
+  } catch (error) {
+    throw new Error(`encrypted Discord credential unavailable; run channel migration and configure CHANNEL_TOKEN_MASTER_KEY (${error.message})`);
+  }
 }
 
 resolveDiscordToken().then((token) => {
