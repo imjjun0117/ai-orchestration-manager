@@ -1,0 +1,25 @@
+# Channel adapters and credential storage
+
+The runtime now enters through a channel adapter. Discord remains the first implementation, while future KakaoTalk, Slack, or other transports can implement the same lifecycle (`onReady`, `onMessage`, and `login`) without changing the queue, agent, approval, or governance services.
+
+## Encrypted bot credentials
+
+`016_channel_credentials` stores only AES-256-GCM ciphertext, nonce, authentication tag, and metadata in PostgreSQL. The master key is supplied at runtime through `CHANNEL_TOKEN_MASTER_KEY` as a 32-byte base64 or 64-character hex value. The master key and the plaintext token must never be committed or passed on command-line arguments.
+
+Apply the table migration:
+
+```bash
+npm run migrate:channels
+```
+
+Import the token from the process environment without placing it in an argument or file tracked by Git:
+
+```bash
+CHANNEL_TOKEN_MASTER_KEY='(secret-manager value)' \
+DISCORD_TOKEN='(secret-manager value)' \
+node scripts/channel-credentials.js store-env discord bot-a
+```
+
+After import, omit `DISCORD_TOKEN` from the runtime environment. `bot.js` first checks the environment for backwards compatibility, then falls back to the encrypted `channel_credentials` row for the Discord channel and bot instance.
+
+For production, inject `CHANNEL_TOKEN_MASTER_KEY` from a secret manager and restrict database access to the runtime role. Never store the master key in the same database as the ciphertext.

@@ -30,6 +30,8 @@ const { askClaude } = require("./agents/claude");
 const { askCodex } = require("./agents/codex");
 const { askGemini } = require("./agents/gemini");
 const { askGemma } = require("./agents/gemma");
+const DiscordAdapter = require("./src/channels/discordAdapter");
+const channelCredentialService = require("./src/channels/channelCredentialService");
 
 function sanitizeInstanceId(value) {
   return String(value || "default").trim().replace(/[^a-zA-Z0-9_.-]/g, "_").slice(0, 64) || "default";
@@ -77,6 +79,7 @@ const client = new Client({
     GatewayIntentBits.MessageContent,
   ],
 });
+const channelAdapter = new DiscordAdapter(client);
 
 // 파일 저장 경로 설정
 const defaultMemoryDirPath = BOT_INSTANCE_ID === "default"
@@ -778,7 +781,7 @@ async function runQaGatedFinalize(message, task, skippedRevision) {
   await finalizeAfterReview(message, task, skippedRevision);
 }
 
-client.once("ready", async () => {
+channelAdapter.onReady(async () => {
 	  try {
     const savedWorkspaceDir = await settingsService.getSetting("workspace_dir");
     if (savedWorkspaceDir) {
@@ -795,7 +798,7 @@ client.once("ready", async () => {
   );
 });
 
-client.on("messageCreate", async (message) => {
+channelAdapter.onMessage(async (message) => {
   if (message.author.bot) return;
 
   const content = normalizeIncomingContent(message.content);
@@ -2154,12 +2157,17 @@ client.on("messageCreate", async (message) => {
   }
 });
 
-if (!process.env.DISCORD_TOKEN) {
-  logger.error(`DISCORD_TOKEN이 설정되지 않아 봇을 시작할 수 없습니다. (instance=${BOT_INSTANCE_ID}, env=${envFilePath})`);
-  process.exit(1);
+async function resolveDiscordToken() {
+  if (process.env.DISCORD_TOKEN) return process.env.DISCORD_TOKEN;
+  return channelCredentialService.getToken({ channelType: "discord", botInstanceId: BOT_INSTANCE_ID });
 }
 
-client.login(process.env.DISCORD_TOKEN).catch((err) => {
+resolveDiscordToken().then((token) => {
+  if (!token) {
+    throw new Error(`Discord token is not configured in DISCORD_TOKEN or channel_credentials (instance=${BOT_INSTANCE_ID})`);
+  }
+  return channelAdapter.login(token);
+}).catch((err) => {
   logger.error(`Discord login 실패 (instance=${BOT_INSTANCE_ID}, env=${envFilePath})`, err);
   process.exit(1);
 });
