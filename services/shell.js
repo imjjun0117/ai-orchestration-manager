@@ -1,3 +1,5 @@
+const os = require("os");
+const path = require("path");
 const { spawn } = require("child_process");
 const pathGuard = require("../src/core/pathGuard");
 const commandGuard = require("../src/core/commandGuard");
@@ -8,7 +10,9 @@ const logger = require("./logger");
 // 로컬 환경의 CLI 실행을 위해 PATH 환경변수를 확장해 줍니다.
 const envWithPaths = {
   ...process.env,
-  PATH: `/usr/local/bin:/Users/dcircus/.local/bin:${process.env.PATH || ""}`,
+  PATH: ["/usr/local/bin", path.join(os.homedir(), ".local/bin"), process.env.PATH || ""]
+    .filter(Boolean)
+    .join(path.delimiter),
 };
 
 const DEFAULT_TIMEOUT_MS = 30 * 60 * 1000;

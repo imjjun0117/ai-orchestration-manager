@@ -6,9 +6,9 @@ services:
     environment:
       POSTGRES_DB: ai_manager
       POSTGRES_USER: ai_manager
-      POSTGRES_PASSWORD: ai_manager_pw
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD must be provided via the local environment}
     ports:
-      - "5432:5432"
+      - "127.0.0.1:5432:5432"
     volumes:
       - ./docker/postgres/data:/var/lib/postgresql/data
       - ./src/db/schema.sql:/docker-entrypoint-initdb.d/schema.sql

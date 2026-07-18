@@ -1,7 +1,7 @@
 {
   "schemaVersion": 1,
   "phaseId": "phase-15",
-  "submissionRound": 3,
+  "submissionRound": 4,
   "submittedBy": "UNASSIGNED_PHASE15_WORKER",
   "baseCommitSha": "UNAVAILABLE:not-a-git-worktree",
   "candidateCommitSha": "UNAVAILABLE:not-a-git-worktree",
@@ -14,7 +14,7 @@
     },
     {
       "path": "docker-compose.yml",
-      "sha256": "sha256:b178fdd5ad8296bc2e38bfc18f9742dad103da103d9a78f6f0d4498fccfd018a",
+      "sha256": "sha256:6e9f1748dd24007ca4becd371cd91dbaf1fa8c9ab408881cbbb99c3252c38f82",
       "mode": "100644",
       "type": "file"
     },
@@ -69,6 +69,12 @@
     {
       "path": "scripts/verify-readiness.js",
       "sha256": "sha256:a887f1c48daab707208145c571bc980ef39d4af4136908c1fb0bcb8590a4b9b4",
+      "mode": "100644",
+      "type": "file"
+    },
+    {
+      "path": "services/shell.js",
+      "sha256": "sha256:1f0f580d9bc0112a989a3249a52eac28160cb068672b4b831452fd65f596e303",
       "mode": "100644",
       "type": "file"
     },
