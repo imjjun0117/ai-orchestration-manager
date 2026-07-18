@@ -68,20 +68,37 @@ async function interactiveStart() {
   }
   const { interactiveSetup, promptText } = require("./scripts/channel-credentials");
   const { pool } = require("./src/channels/channelCredentialService");
-  const role = await selectRole(promptText);
   await ensureMasterKey(promptText);
+  const configureAllAnswer = String(await promptText("Configure all four roles in this session?", "yes"))
+    .trim()
+    .toLowerCase();
+  const configureAll = ["y", "yes"].includes(configureAllAnswer);
+  const rolesToConfigure = configureAll ? ROLES : [await selectRole(promptText)];
   try {
-    await interactiveSetup({
-      ask: async (label, defaultValue) => {
-        if (label === "Channel") return "discord";
-        if (label === "Role / bot instance") return role;
-        return promptText(label, defaultValue);
-      },
-    });
+    for (const [index, role] of rolesToConfigure.entries()) {
+      process.stdout.write(`\n[bot-setup] Configuring ${role} (${index + 1}/${rolesToConfigure.length})\n`);
+      await interactiveSetup({
+        ask: async (label, defaultValue) => {
+          if (label === "Channel") return "discord";
+          if (label === "Role / bot instance") return role;
+          return promptText(label, defaultValue);
+        },
+      });
+    }
   } finally {
     await pool.end();
   }
-  return launchRole(role);
+  if (configureAll) {
+    const startAnswer = String(await promptText("All roles are configured. Start one bot now?", "no"))
+      .trim()
+      .toLowerCase();
+    if (!["y", "yes"].includes(startAnswer)) {
+      process.stdout.write("[bot-setup] Configuration complete. No bot was started.\n");
+      return 0;
+    }
+    return launchRole(await selectRole(promptText));
+  }
+  return launchRole(rolesToConfigure[0]);
 }
 
 async function main() {

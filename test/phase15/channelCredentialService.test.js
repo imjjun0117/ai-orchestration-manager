@@ -192,6 +192,12 @@ test("interactive setup validates the master key before prompting", async () => 
 });
 
 test("bot launcher selects supported roles by number or name", async () => {
+  assert.deepEqual(require("../../bot").ROLES, [
+    "worker",
+    "planning-validator",
+    "development-validator",
+    "gate-admin",
+  ]);
   assert.equal(await selectRole(async () => "2"), "planning-validator");
   assert.equal(await selectRole(async () => "gate-admin"), "gate-admin");
   await assert.rejects(selectRole(async () => "unknown"), /Unsupported role/);

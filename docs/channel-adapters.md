@@ -52,7 +52,7 @@ For production, inject `CHANNEL_TOKEN_MASTER_KEY` from a secret manager and rest
 
 ## Role-specific bot instances
 
-Running `node bot.js` in a terminal starts a guided launcher. It asks for one of the supported roles, generates and stores a local master key in `.env` with mode `0600` when approved and missing, and then reuses or replaces the role's encrypted DB credential before launching the bot. The token is entered without terminal echo.
+Running `node bot.js` in a terminal starts a guided launcher. By default it configures `worker`, `planning-validator`, `development-validator`, and `gate-admin` sequentially in one session. It generates and stores a local master key in `.env` with mode `0600` when approved and missing, and then reuses or replaces each role's encrypted DB credential. Tokens are entered without terminal echo. After all four roles are configured, the operator can exit setup or select one role to launch.
 
 For direct or unattended startup, select the credential with `--role`; the role maps to `bot_instance_id`:
 
