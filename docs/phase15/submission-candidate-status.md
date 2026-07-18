@@ -2,10 +2,10 @@
 
 - Candidate manifest: `submission-candidate.sealed.json`
 - Pre-attestation draft: `submission-candidate.unsealed.json`
-- Candidate round: `11` (interactive setup TTY safety revalidation)
-- Canonical bundle hash: `sha256:a054807513b41e28b40485093acc091136c06a00690a3b5a3ef9ac7b021571fc`
+- Candidate round: `12` (guided role-based bot startup)
+- Canonical bundle hash: `sha256:2b266cdd6b69eef929ee292e8e9a5b986b11f6fbbeb6de49ec9a5a3207adf3d1`
 - Base commit: `c45c66107e6740c73a490eab5b015f6afbf0d3a1`
-- Candidate commit: `1b890e36ea7b81dd9bd645301201920d81f42bf0`
+- Candidate commit: `95706bf8475dc28d499c5503f5c345bcaa3ae7e9`
 - Submitted by: `phase15-worker-codex-01`
 - State: `SEALED_PENDING_SIGNED_VALIDATION`
 - Database submission row: not created

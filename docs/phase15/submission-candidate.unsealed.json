@@ -1,10 +1,10 @@
 {
   "schemaVersion": 1,
   "phaseId": "phase-15",
-  "submissionRound": 11,
+  "submissionRound": 12,
   "submittedBy": "phase15-worker-codex-01",
   "baseCommitSha": "c45c66107e6740c73a490eab5b015f6afbf0d3a1",
-  "candidateCommitSha": "1b890e36ea7b81dd9bd645301201920d81f42bf0",
+  "candidateCommitSha": "95706bf8475dc28d499c5503f5c345bcaa3ae7e9",
   "files": [
     {
       "path": "AI_Manager_Multi_Agent_Discord_Advanced_Spec_v1.1.md",
@@ -70,7 +70,7 @@
       "path": "scripts/verify-readiness.js",
       "type": "file",
       "mode": "100644",
-      "sha256": "sha256:a887f1c48daab707208145c571bc980ef39d4af4136908c1fb0bcb8590a4b9b4"
+      "sha256": "sha256:c79deb3da2b0a82b8761ac49369d7d20c4917ae85a07ec4e9ef4b7420f9f4700"
     },
     {
       "path": "services/shell.js",
@@ -172,7 +172,13 @@
       "path": "bot.js",
       "type": "file",
       "mode": "100644",
-      "sha256": "sha256:c862a0953eb9f6c5ba7977db3dd0f2cb34dc02813860526bf4e64b8e4a4c2bf0"
+      "sha256": "sha256:87bccf9929db5a4aeb7a9acf7b7730ee60d8d046e279fc911c37158d5ab49490"
+    },
+    {
+      "path": "bot-runtime.js",
+      "type": "file",
+      "mode": "100644",
+      "sha256": "sha256:a665b8d7b9bfc10fc1fb4ddefac4c16a722e4eda644a3c6eeed789a923b72b2b"
     },
     {
       "path": ".env.bot-a.example",
@@ -190,7 +196,7 @@
       "path": "docs/channel-adapters.md",
       "type": "file",
       "mode": "100644",
-      "sha256": "sha256:4ff7529dbb4029ecbfad3ea317c48dbf188e2f96803497f9efae743761ffd1b7"
+      "sha256": "sha256:d91254a1fda3f27db8978d26a18989bb31e783e17b1df68fc399d573796e24c2"
     },
     {
       "path": "scripts/channel-credentials.js",
@@ -214,7 +220,7 @@
       "path": "src/channels/discordAdapter.js",
       "type": "file",
       "mode": "100644",
-      "sha256": "sha256:cd5321cc8cbbc2ce42348680a6ceefbdb86e8401c4bd7fbc74eab885d17812cb"
+      "sha256": "sha256:ab00ca1b76369c35d8c629fd7405099163769da66ff9e2862581ea7a5c6b8308"
     },
     {
       "path": "src/channels/index.js",
@@ -226,7 +232,7 @@
       "path": "test/phase15/channelCredentialService.test.js",
       "type": "file",
       "mode": "100644",
-      "sha256": "sha256:0e7171d3f534723e3f5c8f33d0d31a0bc1cd99aa37cb7a01e00f7c52332c13f4"
+      "sha256": "sha256:27152bc0324cb2d45078dbf90e333ed0ac9f9bc80ea0fbe94e91409a80084c6a"
     }
   ],
   "migrationArtifacts": [
