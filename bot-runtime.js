@@ -1,6 +1,5 @@
 const roleArgIndex = process.argv.indexOf("--role");
 const cliRole = roleArgIndex >= 0 ? process.argv[roleArgIndex + 1] : null;
-const ROLE_SELECTED_FROM_CLI = Boolean(cliRole);
 if (cliRole && !process.env.BOT_INSTANCE_ID) process.env.BOT_INSTANCE_ID = cliRole;
 const envFilePath = process.env.ENV_FILE || ".env";
 require("dotenv").config({ path: envFilePath, override: Boolean(process.env.ENV_FILE), quiet: true });
@@ -2162,20 +2161,18 @@ channelAdapter.onMessage(async (message) => {
 });
 
 async function resolveDiscordToken() {
-  if (!ROLE_SELECTED_FROM_CLI && process.env.DISCORD_TOKEN) return process.env.DISCORD_TOKEN;
   try {
     const storedToken = await channelCredentialService.getToken({ channelType: "discord", botInstanceId: BOT_INSTANCE_ID });
     if (storedToken) return storedToken;
   } catch (error) {
     throw new Error(`encrypted Discord credential unavailable; run channel migration and configure CHANNEL_TOKEN_MASTER_KEY (${error.message})`);
   }
-  if (!ROLE_SELECTED_FROM_CLI && process.env.DISCORD_TOKEN) return process.env.DISCORD_TOKEN;
   return null;
 }
 
 resolveDiscordToken().then((token) => {
   if (!token) {
-    throw new Error(`Discord token is not configured in DISCORD_TOKEN or channel_credentials (instance=${BOT_INSTANCE_ID})`);
+    throw new Error(`Discord token is not configured in channel_credentials (instance=${BOT_INSTANCE_ID}); run node bot.js in a terminal to configure it`);
   }
   return channelAdapter.login(token);
 }).catch((err) => {

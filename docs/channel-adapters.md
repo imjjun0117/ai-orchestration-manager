@@ -21,19 +21,17 @@ node scripts/channel-credentials.js setup
 
 The wizard requires an interactive terminal, validates the master key before prompting, and asks for the channel and role/bot instance. If an ACTIVE credential already exists, it is preserved unless replacement is explicitly confirmed. A REVOKED credential is reactivated when the replacement token is stored. Piped or redirected input is rejected so automation cannot mistake an incomplete setup for success.
 
-Import the token from the process environment without placing it in an argument or file tracked by Git:
+The normal setup path accepts the token directly from the hidden terminal prompt and writes only its encrypted form to PostgreSQL:
 
 ```bash
-CHANNEL_TOKEN_MASTER_KEY='(secret-manager value)' \
-CHANNEL_TOKEN='(secret-manager value)' \
-node scripts/channel-credentials.js store-env discord bot-a
+node bot.js
 ```
 
-Revoke a credential before rotating it, then import the replacement. Re-importing the same `(channel_type, bot_instance_id)` automatically reactivates the row:
+Revoke a credential before rotating it, then run the guided setup and select the same role. Storing the replacement automatically reactivates the row:
 
 ```bash
 node scripts/channel-credentials.js revoke discord bot-a
-node scripts/channel-credentials.js store-env discord bot-a
+node bot.js
 ```
 
 For master-key rotation, provide the new key as `CHANNEL_TOKEN_MASTER_KEY`, keep the old key temporarily as `CHANNEL_TOKEN_MASTER_KEY_V<old-version>`, set `CHANNEL_TOKEN_MASTER_KEY_VERSION` to the new version, and run:
@@ -48,7 +46,7 @@ Use `rekey --all` to re-encrypt every active channel credential during a master-
 node scripts/channel-credentials.js rekey --all
 ```
 
-`store-env` accepts the channel-neutral `CHANNEL_TOKEN` first, then a channel-specific name such as `DISCORD_TOKEN`, `KAKAOTALK_TOKEN`, or `SLACK_TOKEN`. After import, omit the token from the runtime environment; `bot.js` falls back to the encrypted `channel_credentials` row for the Discord channel and bot instance.
+The runtime never reads a Discord token from `.env`; it resolves only the active encrypted `channel_credentials` row for the selected role. `store-env` remains available only as a legacy non-interactive import path for controlled automation, and its token environment must be ephemeral rather than stored in an env file.
 
 For production, inject `CHANNEL_TOKEN_MASTER_KEY` from a secret manager and restrict database access to the runtime role. Never store the master key in the same database as the ciphertext.
 
@@ -65,4 +63,4 @@ node bot.js --role development-validator
 node bot.js --role gate-admin
 ```
 
-Each role must have its own active credential when separate Discord applications are used. `--role` takes precedence over `BOT_INSTANCE_ID` and uses the encrypted DB credential instead of the legacy common `DISCORD_TOKEN`. `BOT_INSTANCE_ID` remains supported for unattended environments that do not pass `--role`.
+Each role must have its own active credential when separate Discord applications are used. `--role` takes precedence over `BOT_INSTANCE_ID`; both paths resolve the encrypted DB credential only. `BOT_INSTANCE_ID` remains supported for unattended environments that do not pass `--role`.

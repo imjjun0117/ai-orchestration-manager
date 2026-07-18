@@ -229,3 +229,9 @@ test("DiscordAdapter subscribes to clientReady without deprecated ready events",
   adapter.onReady(handler);
   assert.deepEqual(events, [{ event: "clientReady", handler }]);
 });
+
+test("bot runtime resolves Discord credentials from the database only", () => {
+  const source = fs.readFileSync(path.resolve(__dirname, "../../bot-runtime.js"), "utf8");
+  assert.doesNotMatch(source, /process\.env\.DISCORD_TOKEN/);
+  assert.match(source, /channelCredentialService\.getToken/);
+});

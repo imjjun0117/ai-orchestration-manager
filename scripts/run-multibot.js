@@ -1,6 +1,5 @@
 #!/usr/bin/env node
 
-const crypto = require("crypto");
 const fs = require("fs");
 const path = require("path");
 const { spawn } = require("child_process");
@@ -15,7 +14,7 @@ function usage() {
       "Usage: npm run multibot -- .env.bot-a .env.bot-b [...more env files]",
       "",
       "Each env file should define at least:",
-      "  DISCORD_TOKEN=...",
+      "  CHANNEL_TOKEN_MASTER_KEY=...",
       "  BOT_INSTANCE_ID=bot-a",
       "  COMMAND_PREFIX=!a",
       "",
@@ -41,11 +40,6 @@ function loadEnvFile(filePath) {
   const instanceId = sanitizeInstanceId(parsed.BOT_INSTANCE_ID, fallbackId);
   const commandPrefix = String(parsed.COMMAND_PREFIX || "!").trim() || "!";
   return { absPath, parsed, instanceId, commandPrefix };
-}
-
-function tokenFingerprint(token) {
-  if (!token) return null;
-  return crypto.createHash("sha256").update(token).digest("hex").slice(0, 10);
 }
 
 function prefixStream(stream, output, prefix) {
@@ -81,10 +75,10 @@ try {
   process.exit(1);
 }
 
-const missingToken = configs.filter((config) => !config.parsed.DISCORD_TOKEN);
-if (missingToken.length > 0) {
-  for (const config of missingToken) {
-    console.error(`[multibot] ${config.absPath} is missing DISCORD_TOKEN`);
+const missingMasterKey = configs.filter((config) => !config.parsed.CHANNEL_TOKEN_MASTER_KEY);
+if (missingMasterKey.length > 0) {
+  for (const config of missingMasterKey) {
+    console.error(`[multibot] ${config.absPath} is missing CHANNEL_TOKEN_MASTER_KEY`);
   }
   process.exit(1);
 }
@@ -99,22 +93,13 @@ for (const config of configs) {
 }
 
 const prefixCounts = new Map();
-const tokenCounts = new Map();
 for (const config of configs) {
   prefixCounts.set(config.commandPrefix, (prefixCounts.get(config.commandPrefix) || 0) + 1);
-  const fingerprint = tokenFingerprint(config.parsed.DISCORD_TOKEN);
-  tokenCounts.set(fingerprint, (tokenCounts.get(fingerprint) || 0) + 1);
 }
 
 for (const [prefix, count] of prefixCounts.entries()) {
   if (count > 1) {
     console.error(`[multibot] warning: ${count} instances share COMMAND_PREFIX=${prefix}; they will all handle the same commands.`);
-  }
-}
-
-for (const [fingerprint, count] of tokenCounts.entries()) {
-  if (fingerprint && count > 1) {
-    console.error(`[multibot] warning: ${count} env files appear to use the same DISCORD_TOKEN fingerprint=${fingerprint}.`);
   }
 }
 

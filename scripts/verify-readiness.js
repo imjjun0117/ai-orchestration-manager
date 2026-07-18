@@ -14,7 +14,7 @@ const phase15OperationsMigrationPath = path.join(repoRoot, "src/db/migrations/01
 const packagePath = path.join(repoRoot, "package.json");
 
 const REQUIRED_ENV_KEYS = [
-  "DISCORD_TOKEN",
+  "CHANNEL_TOKEN_MASTER_KEY",
   "BOT_INSTANCE_ID",
   "HOST_INSTANCE_ID",
   "COMMAND_PREFIX",
@@ -226,11 +226,6 @@ function looksLikePlaceholder(value) {
   return normalized.includes("replace-with") || normalized.includes("placeholder") || normalized.includes("example");
 }
 
-function looksLikeDiscordToken(value) {
-  const raw = String(value || "").trim();
-  return /^[A-Za-z0-9_-]{20,}\.[A-Za-z0-9_-]{6,}\.[A-Za-z0-9_-]{20,}$/.test(raw);
-}
-
 function checkEnvExample(fileName) {
   const filePath = path.join(repoRoot, fileName);
   assert(fs.existsSync(filePath), `${fileName} is missing`);
@@ -239,8 +234,7 @@ function checkEnvExample(fileName) {
   for (const key of REQUIRED_ENV_KEYS) {
     assert(parsed[key], `${fileName} is missing ${key}`);
   }
-  assert(looksLikePlaceholder(parsed.DISCORD_TOKEN), `${fileName} DISCORD_TOKEN must be a placeholder`);
-  assert(!looksLikeDiscordToken(parsed.DISCORD_TOKEN), `${fileName} DISCORD_TOKEN looks like a real token`);
+  assert(looksLikePlaceholder(parsed.CHANNEL_TOKEN_MASTER_KEY), `${fileName} CHANNEL_TOKEN_MASTER_KEY must be a placeholder`);
   assert(parsed.BOT_INSTANCE_ID !== "default", `${fileName} BOT_INSTANCE_ID should be instance-specific`);
   assert(parsed.HOST_INSTANCE_ID, `${fileName} HOST_INSTANCE_ID is required`);
   assert(parsed.COMMAND_PREFIX && parsed.COMMAND_PREFIX !== "!", `${fileName} COMMAND_PREFIX should be distinct for multi-bot tests`);
