@@ -9,15 +9,23 @@ const envFile = process.env.ENV_FILE ? path.resolve(process.env.ENV_FILE) : path
 if (fs.existsSync(envFile)) dotenv.config({ path: envFile, override: false, quiet: true });
 
 const { migrateUp } = require("../src/db/migrationRunner");
-const { storeToken, pool } = require("../src/channels/channelCredentialService");
+const { rekeyTokens, revokeToken, storeToken, pool } = require("../src/channels/channelCredentialService");
 
 async function main() {
   const [command, channelType = "discord", botInstanceId = process.env.BOT_INSTANCE_ID || "default"] = process.argv.slice(2);
-  if (command !== "migrate" && command !== "store-env") {
-    throw new Error("Usage: node scripts/channel-credentials.js migrate|store-env [channelType] [botInstanceId]");
+  if (!["migrate", "store-env", "revoke", "rekey"].includes(command)) {
+    throw new Error("Usage: node scripts/channel-credentials.js migrate|store-env|revoke|rekey [channelType] [botInstanceId]");
   }
   if (command === "migrate") {
     console.log(JSON.stringify(await migrateUp("016_channel_credentials"), null, 2));
+    return;
+  }
+  if (command === "revoke") {
+    console.log(JSON.stringify(await revokeToken({ channelType, botInstanceId }), null, 2));
+    return;
+  }
+  if (command === "rekey") {
+    console.log(JSON.stringify(await rekeyTokens({ channelType, botInstanceId }), null, 2));
     return;
   }
   const token = process.env.DISCORD_TOKEN;

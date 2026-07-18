@@ -43,3 +43,35 @@ test("channel token encryption rejects missing or invalid master keys", () => {
     else process.env.CHANNEL_TOKEN_MASTER_KEY = previous;
   }
 });
+
+test("re-storing a revoked credential reactivates it", async () => {
+  const previous = process.env.CHANNEL_TOKEN_MASTER_KEY;
+  process.env.CHANNEL_TOKEN_MASTER_KEY = Buffer.alloc(32, 9).toString("base64");
+  let status = "REVOKED";
+  let encryptedRow = null;
+  const replacement = credentialService.encryptToken("rotated-token");
+  const fakeDb = {
+    query: async (sql, params) => {
+      if (sql.includes("INSERT INTO channel_credentials")) {
+        encryptedRow = {
+          encrypted_token: replacement.ciphertext.toString("base64"),
+          nonce: replacement.iv.toString("base64"),
+          auth_tag: replacement.authTag.toString("base64"),
+          key_version: replacement.keyVersion,
+        };
+        status = "ACTIVE";
+        return { rows: [{ id: 1, channel_type: "discord", bot_instance_id: "test", status }] };
+      }
+      if (sql.includes("SELECT encrypted_token")) return { rows: status === "ACTIVE" ? [encryptedRow] : [] };
+      return { rows: [] };
+    },
+  };
+  try {
+    assert.equal(await credentialService.getToken({ channelType: "discord", botInstanceId: "test" }, { db: fakeDb }), null);
+    await credentialService.storeToken({ channelType: "discord", botInstanceId: "test", token: "rotated-token" }, { db: fakeDb });
+    assert.equal(await credentialService.getToken({ channelType: "discord", botInstanceId: "test" }, { db: fakeDb }), "rotated-token");
+  } finally {
+    if (previous === undefined) delete process.env.CHANNEL_TOKEN_MASTER_KEY;
+    else process.env.CHANNEL_TOKEN_MASTER_KEY = previous;
+  }
+});

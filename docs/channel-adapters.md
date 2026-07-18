@@ -20,6 +20,19 @@ DISCORD_TOKEN='(secret-manager value)' \
 node scripts/channel-credentials.js store-env discord bot-a
 ```
 
+Revoke a credential before rotating it, then import the replacement. Re-importing the same `(channel_type, bot_instance_id)` automatically reactivates the row:
+
+```bash
+node scripts/channel-credentials.js revoke discord bot-a
+node scripts/channel-credentials.js store-env discord bot-a
+```
+
+For master-key rotation, provide the new key as `CHANNEL_TOKEN_MASTER_KEY`, keep the old key temporarily as `CHANNEL_TOKEN_MASTER_KEY_V<old-version>`, set `CHANNEL_TOKEN_MASTER_KEY_VERSION` to the new version, and run:
+
+```bash
+node scripts/channel-credentials.js rekey discord bot-a
+```
+
 After import, omit `DISCORD_TOKEN` from the runtime environment. `bot.js` first checks the environment for backwards compatibility, then falls back to the encrypted `channel_credentials` row for the Discord channel and bot instance.
 
 For production, inject `CHANNEL_TOKEN_MASTER_KEY` from a secret manager and restrict database access to the runtime role. Never store the master key in the same database as the ciphertext.
