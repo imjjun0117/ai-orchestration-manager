@@ -1,0 +1,29 @@
+{
+  "name": "ai-manager",
+  "version": "1.0.0",
+  "description": "",
+  "main": "index.js",
+  "scripts": {
+    "start": "node bot.js",
+    "multibot": "node scripts/run-multibot.js",
+    "stress:locks": "node scripts/stress-workspace-locks.js",
+    "verify": "node scripts/verify-readiness.js",
+    "verify:db": "node scripts/verify-readiness.js --with-db",
+    "verify:stress": "node scripts/verify-readiness.js --with-db --with-stress --stress-workers 6",
+    "phase15": "node scripts/phase15-governance.js",
+    "migrate:phase15": "node scripts/phase15-governance.js migrate",
+    "test": "node --test test/phase15/*.test.js",
+    "test:phase15": "node --test test/phase15/*.test.js",
+    "test:phase15:db": "PHASE15_DB_TEST=1 node --test test/phase15/databaseIntegration.test.js"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "commonjs",
+  "dependencies": {
+    "codex": "^0.2.3",
+    "discord.js": "^14.26.4",
+    "dotenv": "^17.4.2",
+    "pg": "^8.22.0"
+  }
+}

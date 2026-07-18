@@ -1,0 +1,13 @@
+node_modules/
+.DS_Store
+.claude/
+.env
+.env.*
+!.env.*.example
+logs/
+docker/postgres/data/
+
+# temp_simulator.js가 실행할 때마다 재생성하는 빌드 산출물 (이제 os.tmpdir()에 생성되지만,
+# 과거 버전이 프로젝트 루트에 만들어뒀던 것이 실수로 다시 생기는 걸 방지)
+temp_bot_exports.js
+temp_*.js

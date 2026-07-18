@@ -1,0 +1,1 @@
+DROP FUNCTION IF EXISTS replace_phase_assignment(TEXT, TEXT, TEXT, TEXT, TEXT, TEXT, BIGINT);

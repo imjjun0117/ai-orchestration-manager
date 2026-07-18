@@ -1,0 +1,11 @@
+{
+  "id": "spring-board-permission",
+  "name": "Spring Board Permission",
+  "description": "Spring/JSP 게시판 권한, JWT roles, captcha 관련 기능 개선",
+  "triggers": ["게시판 권한", "captcha", "jwt", "roles", "관리자", "로그인 사용자"],
+  "agentType": "coder",
+  "riskLevel": "medium",
+  "requiredApproval": true,
+  "allowedCommands": ["grep", "find", "git diff", "npm test", "mvn test"],
+  "blockedCommands": ["rm -rf", "git push", "drop table", "truncate", "delete from"]
+}

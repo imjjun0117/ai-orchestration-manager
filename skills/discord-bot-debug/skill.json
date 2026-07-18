@@ -1,0 +1,11 @@
+{
+  "id": "discord-bot-debug",
+  "name": "Discord Bot Debug",
+  "description": "이 Discord 봇(ai-manager) 자체의 명령어 처리, 이벤트 핸들링, 로그 분석 관련 디버깅",
+  "triggers": ["디스코드 봇", "봇 명령어", "핸들러", "이벤트", "discord.js", "봇 디버그", "봇 에러", "슬래시 커맨드"],
+  "agentType": "coder",
+  "riskLevel": "low",
+  "requiredApproval": true,
+  "allowedCommands": ["grep", "find", "git diff", "npm test"],
+  "blockedCommands": ["rm -rf", "git push", "drop table", "truncate", "delete from"]
+}

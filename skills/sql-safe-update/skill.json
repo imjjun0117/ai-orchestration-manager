@@ -1,0 +1,11 @@
+{
+  "id": "sql-safe-update",
+  "name": "SQL Safe Update",
+  "description": "PostgreSQL/MyBatis 등 DB 업데이트/삭제 쿼리를 안전하게 작성 (WHERE 누락 방지 등)",
+  "triggers": ["update문", "delete문", "쿼리 수정", "mybatis", "sql", "db 업데이트", "테이블 수정"],
+  "agentType": "coder",
+  "riskLevel": "high",
+  "requiredApproval": true,
+  "allowedCommands": ["grep", "find", "git diff"],
+  "blockedCommands": ["rm -rf", "git push", "drop table", "truncate", "delete from", "sudo"]
+}
