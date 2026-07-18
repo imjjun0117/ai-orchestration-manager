@@ -20,6 +20,8 @@ npm run phase15 -- rollback --confirm-phase15-rollback
 
 The explicit confirmation reverses operator, validation-rework, privilege-hardening, and core migrations in that order, then removes the Phase 15 governance tables and functions.
 
+This full reverse chain is the only supported rollback unit. Do not execute an individual `015_delivery_governance*.down.sql` file or roll back only `015_delivery_governance_rework`: the rework migration replaces core function definitions, so its down script removes those replacements and relies on the remaining reverse chain to remove the core governance layer. A partial down would therefore leave an unsupported intermediate schema. The operator command above enforces the required order.
+
 ## Verification
 
 - `to_regclass('public.delivery_phases') IS NULL`
@@ -27,6 +29,7 @@ The explicit confirmation reverses operator, validation-rework, privilege-harden
 - existing runtime tables remain present
 - existing `npm run verify` static checks still pass after the code/schema version is rolled back together
 - bootstrap manifest and signed verdict artifacts remain recoverable
+- no individual Phase 15 migration remains recorded as applied after the full rollback
 
 ## Recovery
 

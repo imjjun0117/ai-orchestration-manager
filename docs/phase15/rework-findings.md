@@ -14,5 +14,6 @@ This document maps the independent planning and development findings to worker c
 | DELETE trigger silently ignored allowed deletes | DELETE returns `OLD`; protected terminal rows raise | draft delete and immutable delete tests |
 | Required negative Gate paths were missing | added hash mismatch, open finding, unassigned/cross-actor, dependency tests | disposable DB suite |
 | Operator lifecycle and status were incomplete | request-file CLI commands, cancellation, assignment replacement, expanded status/runbook | syntax, DB, and readiness verification |
+| Rework down migration could be misused as a standalone rollback | runbook declares the full reverse chain as the only supported rollback unit and explains the intermediate-state hazard | full-chain rollback verification |
 
-Formal Git metadata, real actor assignment, signed independent verdicts, bootstrap import, and Gate replay remain external acceptance blockers. They cannot be completed in this non-Git workspace by the worker.
+Authoritative Git metadata is now available. Real actor assignment, signed independent verdicts for the final Git-bound hash, bootstrap import, and Gate replay remain external acceptance blockers that the worker cannot self-approve.
