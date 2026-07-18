@@ -2,10 +2,10 @@
 
 - Candidate manifest: `submission-candidate.sealed.json`
 - Pre-attestation draft: `submission-candidate.unsealed.json`
-- Candidate round: `9` (role-specific bot credential selection)
-- Canonical bundle hash: `sha256:6a7d9591f61877399577004531640e90fc684fd898797239a226e88161c3aacb`
+- Candidate round: `10` (interactive channel credential setup)
+- Canonical bundle hash: `sha256:3f5f9a869094929544e9621399aec0e376a348ab8f5f92407f1a343274fbf7ea`
 - Base commit: `c45c66107e6740c73a490eab5b015f6afbf0d3a1`
-- Candidate commit: `582b8c200d343d9a9030194b03071f16f16ab80d`
+- Candidate commit: `ae97b026420a94eddbc6719d228fedbecc80435b`
 - Submitted by: `phase15-worker-codex-01`
 - State: `SEALED_PENDING_SIGNED_VALIDATION`
 - Database submission row: not created

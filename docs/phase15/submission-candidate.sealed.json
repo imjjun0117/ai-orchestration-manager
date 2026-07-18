@@ -1,10 +1,10 @@
 {
   "schemaVersion": 1,
   "phaseId": "phase-15",
-  "submissionRound": 9,
+  "submissionRound": 10,
   "submittedBy": "phase15-worker-codex-01",
   "baseCommitSha": "c45c66107e6740c73a490eab5b015f6afbf0d3a1",
-  "candidateCommitSha": "582b8c200d343d9a9030194b03071f16f16ab80d",
+  "candidateCommitSha": "ae97b026420a94eddbc6719d228fedbecc80435b",
   "files": [
     {
       "path": "AI_Manager_Multi_Agent_Discord_Advanced_Spec_v1.1.md",
@@ -190,13 +190,13 @@
       "path": "docs/channel-adapters.md",
       "type": "file",
       "mode": "100644",
-      "sha256": "sha256:5f2f27fdbd0e40cccbb61a54c79144790a2eb5582d229e3c687ca3c7701f234f"
+      "sha256": "sha256:e912bbd274b7d2b37ec6590841a0b41a8839d9846280f909afbc1401781dd6bc"
     },
     {
       "path": "scripts/channel-credentials.js",
       "type": "file",
       "mode": "100644",
-      "sha256": "sha256:f65c28e7db500f3bba002c85ce7bcc70c39fc3fc7ab7d9017bdd96274decf0a1"
+      "sha256": "sha256:556d22bba7b07f5d3da3a68accdf363734a70a09567181316665b7b159ccd697"
     },
     {
       "path": "src/channels/channelAdapter.js",
@@ -208,7 +208,7 @@
       "path": "src/channels/channelCredentialService.js",
       "type": "file",
       "mode": "100644",
-      "sha256": "sha256:004f5e31cd9631fc845152bdb99f96553eb905870b006e71b669d8c399368593"
+      "sha256": "sha256:16eb870ebf13af380a078054824788dc9ff78d26d2206f5fd2e64a0b919acabc"
     },
     {
       "path": "src/channels/discordAdapter.js",
@@ -226,7 +226,7 @@
       "path": "test/phase15/channelCredentialService.test.js",
       "type": "file",
       "mode": "100644",
-      "sha256": "sha256:1262cad372a39c9024aaee687c2f40f08d6533a3087704168fa712024acdfa70"
+      "sha256": "sha256:06c07bfd3e962ff5902bad3a402d2388f3477a851160822ca9c143227f0015ab"
     }
   ],
   "migrationArtifacts": [
