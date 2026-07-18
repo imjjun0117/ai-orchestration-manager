@@ -4,7 +4,7 @@
   "submissionRound": 6,
   "submittedBy": "phase15-worker-codex-01",
   "baseCommitSha": "c45c66107e6740c73a490eab5b015f6afbf0d3a1",
-  "candidateCommitSha": "69c709ed732a374a5a6ecd3a88e6c6b10ccba0ac",
+  "candidateCommitSha": "80acb26b8a01f28baf314789c89d2767f39e02a8",
   "files": [
     {
       "path": "AI_Manager_Multi_Agent_Discord_Advanced_Spec_v1.1.md",
@@ -190,13 +190,13 @@
       "path": "docs/channel-adapters.md",
       "type": "file",
       "mode": "100644",
-      "sha256": "sha256:03b572b734d007485134e36dabdbff59f21c0316e69ce21261773434f344d3a9"
+      "sha256": "sha256:686777d260cb009e24e90b75963e6a2cc0b11b8f72f4a83536f1a5fec27f4d22"
     },
     {
       "path": "scripts/channel-credentials.js",
       "type": "file",
       "mode": "100644",
-      "sha256": "sha256:da1c8eeddcf20dc4c849a9ab3c231fc7361af2244ddd3caf6c796ba4330d88ec"
+      "sha256": "sha256:d8f47692bbd66bc9a0ac8d7406498874a64cc0af42d2853a98c37dfafde51387"
     },
     {
       "path": "src/channels/channelAdapter.js",

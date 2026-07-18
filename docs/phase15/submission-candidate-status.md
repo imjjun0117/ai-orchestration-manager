@@ -3,9 +3,9 @@
 - Candidate manifest: `submission-candidate.sealed.json`
 - Pre-attestation draft: `submission-candidate.unsealed.json`
 - Candidate round: `6` (channel credential revalidation)
-- Canonical bundle hash: `sha256:0ccd866fa5c90b819ca68c54f4df01176588158515e2cad7a449ed6658aee98d`
+- Canonical bundle hash: `sha256:2ff89fde5bcdd40d14f18f2ef2b67b64811356fcd5bc9fb75ea73891eacefea8`
 - Base commit: `c45c66107e6740c73a490eab5b015f6afbf0d3a1`
-- Candidate commit: `69c709ed732a374a5a6ecd3a88e6c6b10ccba0ac`
+- Candidate commit: `80acb26b8a01f28baf314789c89d2767f39e02a8`
 - Submitted by: `phase15-worker-codex-01`
 - State: `SEALED_PENDING_SIGNED_VALIDATION`
 - Database submission row: not created
