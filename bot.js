@@ -13,6 +13,12 @@ const envFilePath = process.env.ENV_FILE
 if (fs.existsSync(envFilePath)) dotenv.config({ path: envFilePath, override: false, quiet: true });
 
 const ROLES = ["worker", "planning-validator", "development-validator", "gate-admin"];
+const ROLE_PREFIXES = {
+  worker: "!dev",
+  "planning-validator": "!pm",
+  "development-validator": "!review",
+  "gate-admin": "!release",
+};
 
 function requestedRole(argv = process.argv.slice(2)) {
   const index = argv.indexOf("--role");
@@ -62,6 +68,55 @@ function launchRole(role) {
   });
 }
 
+function launchRoles(roles = ROLES, { spawnProcess = spawn } = {}) {
+  return new Promise((resolve, reject) => {
+    const children = [];
+    let remaining = roles.length;
+    let finalCode = 0;
+    let failed = false;
+    const cleanup = () => {
+      process.removeListener("SIGINT", stopAll);
+      process.removeListener("SIGTERM", stopAll);
+    };
+    const stopAll = () => {
+      for (const child of children) {
+        if (!child.killed) child.kill("SIGTERM");
+      }
+    };
+    process.once("SIGINT", stopAll);
+    process.once("SIGTERM", stopAll);
+
+    for (const role of roles) {
+      const envName = `${role.toUpperCase().replace(/[^A-Z0-9]+/g, "_")}_COMMAND_PREFIX`;
+      const commandPrefix = process.env[envName] || ROLE_PREFIXES[role] || "!";
+      const child = spawnProcess(process.execPath, [path.join(repoRoot, "bot-runtime.js"), "--role", role], {
+        cwd: repoRoot,
+        env: { ...process.env, BOT_INSTANCE_ID: role, COMMAND_PREFIX: commandPrefix },
+        stdio: "inherit",
+      });
+      children.push(child);
+      process.stdout.write(`[bot-supervisor] Started ${role} prefix=${commandPrefix} pid=${child.pid}\n`);
+      child.once("error", (error) => {
+        if (failed) return;
+        failed = true;
+        cleanup();
+        stopAll();
+        reject(error);
+      });
+      child.once("exit", (code, signal) => {
+        if (failed) return;
+        if (code && finalCode === 0) finalCode = code;
+        if (signal && !["SIGINT", "SIGTERM"].includes(signal) && finalCode === 0) finalCode = 1;
+        remaining -= 1;
+        if (remaining === 0) {
+          cleanup();
+          resolve(finalCode);
+        }
+      });
+    }
+  });
+}
+
 async function interactiveStart() {
   if (!process.stdin.isTTY || !process.stdout.isTTY) {
     throw new Error("Interactive bot startup requires a TTY; use --role or BOT_INSTANCE_ID for unattended startup");
@@ -89,14 +144,17 @@ async function interactiveStart() {
     await pool.end();
   }
   if (configureAll) {
-    const startAnswer = String(await promptText("All roles are configured. Start one bot now?", "no"))
-      .trim()
-      .toLowerCase();
-    if (!["y", "yes"].includes(startAnswer)) {
+    const startChoice = String(await promptText(
+      "All roles are configured. Start: 1) all four bots, 2) one bot, 3) none",
+      "1"
+    )).trim().toLowerCase();
+    if (["1", "all", "a"].includes(startChoice)) return launchRoles();
+    if (["2", "one", "o"].includes(startChoice)) return launchRole(await selectRole(promptText));
+    if (["3", "none", "n", "no"].includes(startChoice)) {
       process.stdout.write("[bot-setup] Configuration complete. No bot was started.\n");
       return 0;
     }
-    return launchRole(await selectRole(promptText));
+    throw new Error(`Unsupported start choice: ${startChoice}`);
   }
   return launchRole(rolesToConfigure[0]);
 }
@@ -124,4 +182,14 @@ if (require.main === module) {
   });
 }
 
-module.exports = { ROLES, ensureMasterKey, interactiveStart, launchRole, main, requestedRole, selectRole };
+module.exports = {
+  ROLES,
+  ROLE_PREFIXES,
+  ensureMasterKey,
+  interactiveStart,
+  launchRole,
+  launchRoles,
+  main,
+  requestedRole,
+  selectRole,
+};

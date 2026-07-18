@@ -3,12 +3,13 @@ const fs = require("node:fs");
 const os = require("node:os");
 const path = require("node:path");
 const { spawnSync } = require("node:child_process");
+const { EventEmitter } = require("node:events");
 const test = require("node:test");
 
 const credentialService = require("../../src/channels/channelCredentialService");
 const { interactiveSetup } = require("../../scripts/channel-credentials");
 const DiscordAdapter = require("../../src/channels/discordAdapter");
-const { ensureMasterKey, requestedRole, selectRole } = require("../../bot");
+const { ensureMasterKey, launchRoles, requestedRole, selectRole } = require("../../bot");
 
 test("channel token encryption round-trips without storing plaintext", async () => {
   const previous = process.env.CHANNEL_TOKEN_MASTER_KEY;
@@ -221,6 +222,25 @@ test("bot launcher creates a protected local master key without exposing it", as
     if (previous === undefined) delete process.env.CHANNEL_TOKEN_MASTER_KEY;
     else process.env.CHANNEL_TOKEN_MASTER_KEY = previous;
   }
+});
+
+test("bot supervisor launches role processes with distinct default prefixes", async () => {
+  const calls = [];
+  const fakeSpawn = (command, args, options) => {
+    const child = new EventEmitter();
+    child.pid = 1000 + calls.length;
+    child.killed = false;
+    child.kill = () => { child.killed = true; };
+    calls.push({ command, args, options, child });
+    queueMicrotask(() => child.emit("exit", 0, null));
+    return child;
+  };
+  assert.equal(await launchRoles(["worker", "planning-validator"], { spawnProcess: fakeSpawn }), 0);
+  assert.equal(calls[0].options.env.BOT_INSTANCE_ID, "worker");
+  assert.equal(calls[0].options.env.COMMAND_PREFIX, "!dev");
+  assert.equal(calls[1].options.env.BOT_INSTANCE_ID, "planning-validator");
+  assert.equal(calls[1].options.env.COMMAND_PREFIX, "!pm");
+  assert.match(calls[0].args[0], /bot-runtime\.js$/);
 });
 
 test("DiscordAdapter subscribes to clientReady without deprecated ready events", () => {
