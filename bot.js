@@ -1,3 +1,6 @@
+const roleArgIndex = process.argv.indexOf("--role");
+const cliRole = roleArgIndex >= 0 ? process.argv[roleArgIndex + 1] : null;
+if (cliRole && !process.env.BOT_INSTANCE_ID) process.env.BOT_INSTANCE_ID = cliRole;
 const envFilePath = process.env.ENV_FILE || ".env";
 require("dotenv").config({ path: envFilePath, override: Boolean(process.env.ENV_FILE) });
 const fs = require("fs");

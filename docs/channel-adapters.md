@@ -42,3 +42,16 @@ node scripts/channel-credentials.js rekey --all
 `store-env` accepts the channel-neutral `CHANNEL_TOKEN` first, then a channel-specific name such as `DISCORD_TOKEN`, `KAKAOTALK_TOKEN`, or `SLACK_TOKEN`. After import, omit the token from the runtime environment; `bot.js` falls back to the encrypted `channel_credentials` row for the Discord channel and bot instance.
 
 For production, inject `CHANNEL_TOKEN_MASTER_KEY` from a secret manager and restrict database access to the runtime role. Never store the master key in the same database as the ciphertext.
+
+## Role-specific bot instances
+
+Select the credential for a role with `--role`; the role maps to `bot_instance_id`:
+
+```bash
+node bot.js --role worker
+node bot.js --role planning-validator
+node bot.js --role development-validator
+node bot.js --role gate-admin
+```
+
+Each role must have its own active credential when separate Discord applications are used. `BOT_INSTANCE_ID` remains supported and takes precedence when explicitly set.
