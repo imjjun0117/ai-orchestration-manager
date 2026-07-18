@@ -19,7 +19,7 @@ export CHANNEL_TOKEN_MASTER_KEY='(secret-manager value)'
 node scripts/channel-credentials.js setup
 ```
 
-The wizard asks for the channel and role/bot instance. If an ACTIVE credential already exists, it is preserved unless replacement is explicitly confirmed. A REVOKED credential is reactivated when the replacement token is stored.
+The wizard requires an interactive terminal, validates the master key before prompting, and asks for the channel and role/bot instance. If an ACTIVE credential already exists, it is preserved unless replacement is explicitly confirmed. A REVOKED credential is reactivated when the replacement token is stored. Piped or redirected input is rejected so automation cannot mistake an incomplete setup for success.
 
 Import the token from the process environment without placing it in an argument or file tracked by Git:
 

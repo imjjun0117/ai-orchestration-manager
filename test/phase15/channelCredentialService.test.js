@@ -1,4 +1,6 @@
 const assert = require("node:assert/strict");
+const path = require("node:path");
+const { spawnSync } = require("node:child_process");
 const test = require("node:test");
 
 const credentialService = require("../../src/channels/channelCredentialService");
@@ -88,6 +90,7 @@ test("interactive setup stores a hidden token for the selected role", async () =
       askSecret: async () => "interactive-secret-token",
       migrate: async (id) => calls.migrated.push(id),
       statusLookup: async () => null,
+      isInteractive: () => true,
       save: async (value) => {
         calls.saved.push(value);
         return { key_version: 1 };
@@ -124,6 +127,7 @@ test("interactive setup preserves an existing ACTIVE credential by default", asy
       },
       migrate: async () => {},
       statusLookup: async () => ({ status: "ACTIVE" }),
+      isInteractive: () => true,
       save: async () => {
         throw new Error("save must not be called");
       },
@@ -135,6 +139,48 @@ test("interactive setup preserves an existing ACTIVE credential by default", asy
       channelType: "discord",
       botInstanceId: "worker",
     });
+  } finally {
+    if (previous === undefined) delete process.env.CHANNEL_TOKEN_MASTER_KEY;
+    else process.env.CHANNEL_TOKEN_MASTER_KEY = previous;
+  }
+});
+
+test("interactive setup rejects non-TTY input with a non-zero exit", () => {
+  const script = path.resolve(__dirname, "../../scripts/channel-credentials.js");
+  const result = spawnSync(process.execPath, [script, "setup"], {
+    cwd: path.resolve(__dirname, "../.."),
+    encoding: "utf8",
+    input: "discord\nworker\nsecret-token\n",
+    env: {
+      ...process.env,
+      CHANNEL_TOKEN_MASTER_KEY: Buffer.alloc(32, 13).toString("base64"),
+    },
+  });
+  assert.notEqual(result.status, 0);
+  assert.match(result.stderr, /requires a TTY/);
+  assert.doesNotMatch(`${result.stdout}${result.stderr}`, /secret-token/);
+});
+
+test("interactive setup validates the master key before prompting", async () => {
+  const previous = process.env.CHANNEL_TOKEN_MASTER_KEY;
+  process.env.CHANNEL_TOKEN_MASTER_KEY = Buffer.alloc(16, 14).toString("base64");
+  let prompted = false;
+  try {
+    await assert.rejects(
+      interactiveSetup({
+        ask: async () => {
+          prompted = true;
+          return "discord";
+        },
+        askSecret: async () => {
+          prompted = true;
+          return "token";
+        },
+        isInteractive: () => true,
+      }),
+      /must decode to 32 bytes/
+    );
+    assert.equal(prompted, false);
   } finally {
     if (previous === undefined) delete process.env.CHANNEL_TOKEN_MASTER_KEY;
     else process.env.CHANNEL_TOKEN_MASTER_KEY = previous;

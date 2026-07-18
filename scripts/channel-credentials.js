@@ -12,6 +12,7 @@ if (fs.existsSync(envFile)) dotenv.config({ path: envFile, override: false, quie
 
 const { migrateUp } = require("../src/db/migrationRunner");
 const {
+  encryptToken,
   getCredentialStatus,
   rekeyTokens,
   revokeToken,
@@ -26,10 +27,23 @@ function normalizeIdentifier(value, fallback) {
 function promptText(label, defaultValue) {
   const prompt = `${label} [${defaultValue}]: `;
   const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
-  return new Promise((resolve) => {
+  return new Promise((resolve, reject) => {
+    let settled = false;
     rl.question(prompt, (answer) => {
+      settled = true;
       rl.close();
       resolve(String(answer || "").trim() || defaultValue);
+    });
+    rl.on("SIGINT", () => {
+      if (settled) return;
+      settled = true;
+      rl.close();
+      reject(new Error("Interactive setup cancelled"));
+    });
+    rl.on("close", () => {
+      if (settled) return;
+      settled = true;
+      reject(new Error("Interactive setup input ended unexpectedly"));
     });
   });
 }
@@ -60,6 +74,13 @@ function promptSecret(label) {
     };
     rl.question("", (answer) => finish(() => resolve(String(answer || "").trim())));
     rl.on("SIGINT", () => finish(() => reject(new Error("Interactive setup cancelled"))));
+    rl.on("close", () => {
+      if (settled) return;
+      settled = true;
+      muted = false;
+      process.stdout.write("\n");
+      reject(new Error("Interactive setup input ended unexpectedly"));
+    });
   });
 }
 
@@ -69,9 +90,14 @@ async function interactiveSetup({
   migrate = migrateUp,
   statusLookup = getCredentialStatus,
   save = storeToken,
+  isInteractive = () => Boolean(process.stdin.isTTY && process.stdout.isTTY),
 } = {}) {
   if (!String(process.env.CHANNEL_TOKEN_MASTER_KEY || "").trim()) {
     throw new Error("CHANNEL_TOKEN_MASTER_KEY must be configured before interactive setup");
+  }
+  encryptToken("master-key-preflight");
+  if (!isInteractive()) {
+    throw new Error("Interactive setup requires a TTY so the token can be entered without echo");
   }
   await migrate("016_channel_credentials");
   const channelType = normalizeIdentifier(await ask("Channel", "discord"), "discord");
