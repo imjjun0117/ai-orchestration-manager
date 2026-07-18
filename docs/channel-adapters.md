@@ -33,6 +33,12 @@ For master-key rotation, provide the new key as `CHANNEL_TOKEN_MASTER_KEY`, keep
 node scripts/channel-credentials.js rekey discord bot-a
 ```
 
+Use `rekey --all` to re-encrypt every active channel credential during a master-key rotation:
+
+```bash
+node scripts/channel-credentials.js rekey --all
+```
+
 `store-env` accepts the channel-neutral `CHANNEL_TOKEN` first, then a channel-specific name such as `DISCORD_TOKEN`, `KAKAOTALK_TOKEN`, or `SLACK_TOKEN`. After import, omit the token from the runtime environment; `bot.js` falls back to the encrypted `channel_credentials` row for the Discord channel and bot instance.
 
 For production, inject `CHANNEL_TOKEN_MASTER_KEY` from a secret manager and restrict database access to the runtime role. Never store the master key in the same database as the ciphertext.

@@ -72,7 +72,7 @@ async function getToken({ channelType, botInstanceId }, { db = { query } } = {})
 async function revokeToken({ channelType, botInstanceId, reason = "operator revocation" }, { db = { query } } = {}) {
   const result = await db.query(
     `UPDATE channel_credentials
-     SET status = 'REVOKED', metadata_json = metadata_json || jsonb_build_object('revocationReason', $3), updated_at = CURRENT_TIMESTAMP
+     SET status = 'REVOKED', metadata_json = metadata_json || jsonb_build_object('revocationReason', $3::text), updated_at = CURRENT_TIMESTAMP
      WHERE channel_type = $1 AND bot_instance_id = $2
      RETURNING id, channel_type, bot_instance_id, status`,
     [channelType, botInstanceId, reason]

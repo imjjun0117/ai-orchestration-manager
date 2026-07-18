@@ -12,7 +12,9 @@ const { migrateUp } = require("../src/db/migrationRunner");
 const { rekeyTokens, revokeToken, storeToken, pool } = require("../src/channels/channelCredentialService");
 
 async function main() {
-  const [command, channelType = "discord", botInstanceId = process.env.BOT_INSTANCE_ID || "default"] = process.argv.slice(2);
+  const [command, requestedChannelType, requestedBotInstanceId] = process.argv.slice(2);
+  const channelType = requestedChannelType && !requestedChannelType.startsWith("--") ? requestedChannelType : "discord";
+  const botInstanceId = requestedBotInstanceId || process.env.BOT_INSTANCE_ID || "default";
   if (!["migrate", "store-env", "revoke", "rekey"].includes(command)) {
     throw new Error("Usage: node scripts/channel-credentials.js migrate|store-env|revoke|rekey [channelType] [botInstanceId]");
   }
@@ -25,7 +27,8 @@ async function main() {
     return;
   }
   if (command === "rekey") {
-    console.log(JSON.stringify(await rekeyTokens({ channelType, botInstanceId }), null, 2));
+    const all = requestedChannelType === "--all" || !requestedChannelType;
+    console.log(JSON.stringify(await rekeyTokens(all ? {} : { channelType, botInstanceId }), null, 2));
     return;
   }
   const normalizedChannel = String(channelType).trim().toUpperCase().replace(/[^A-Z0-9]+/g, "_");

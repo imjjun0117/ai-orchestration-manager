@@ -28,6 +28,7 @@ if (!enabled) {
     signVerdictPayload,
   } = require("../../src/delivery/deliveryBootstrapService");
   const { hashCanonicalJson } = require("../../src/delivery/canonicalSubmissionManifest");
+  const credentialService = require("../../src/channels/channelCredentialService");
 
   const baseConnectionString = process.env.PHASE15_TEST_DATABASE_URL || process.env.DATABASE_URL;
   if (!baseConnectionString) throw new Error("PHASE15_TEST_DATABASE_URL or DATABASE_URL is required");
@@ -178,10 +179,13 @@ if (!enabled) {
     await migrateUp("015_delivery_governance_security", { pool });
     await migrateUp("015_delivery_governance_rework", { pool });
     await migrateUp("015_delivery_governance_operations", { pool });
+    await migrateUp("016_channel_credentials", { pool });
+    process.env.CHANNEL_TOKEN_MASTER_KEY = crypto.randomBytes(32).toString("base64");
   });
 
   after(async () => {
     if (pool) {
+      await migrateDown("016_channel_credentials", { pool, allowDestructive: true });
       await migrateDown("015_delivery_governance_operations", { pool, allowDestructive: true });
       await migrateDown("015_delivery_governance_rework", { pool, allowDestructive: true });
       await migrateDown("015_delivery_governance_security", { pool, allowDestructive: true });
@@ -230,6 +234,23 @@ if (!enabled) {
          AND (object_name LIKE 'delivery_%' OR object_name LIKE 'phase_%')`
     );
     assert.deepEqual(sequences, []);
+  });
+
+  test("channel credential revoke and rotation lifecycle works against PostgreSQL", async () => {
+    const channelType = `discord-${process.pid}`;
+    const botInstanceId = `integration-${Date.now()}`;
+    await credentialService.storeToken({ channelType, botInstanceId, token: "integration-token-v1", db: pool });
+    assert.equal(await credentialService.getToken({ channelType, botInstanceId, db: pool }), "integration-token-v1");
+    const revoked = await credentialService.revokeToken({
+      channelType,
+      botInstanceId,
+      reason: "integration-test",
+      db: pool,
+    });
+    assert.equal(revoked.status, "REVOKED");
+    assert.equal(await credentialService.getToken({ channelType, botInstanceId, db: pool }), null);
+    await credentialService.storeToken({ channelType, botInstanceId, token: "integration-token-v2", db: pool });
+    assert.equal(await credentialService.getToken({ channelType, botInstanceId, db: pool }), "integration-token-v2");
   });
 
   test("database rejects self-validation assignments", async () => {
