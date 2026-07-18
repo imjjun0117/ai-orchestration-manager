@@ -2,10 +2,10 @@
 
 - Candidate manifest: `submission-candidate.sealed.json`
 - Pre-attestation draft: `submission-candidate.unsealed.json`
-- Candidate round: `7` (channel credential revoke/rekey revalidation)
-- Canonical bundle hash: `sha256:86a37100b35f637c51b93fac724b0413aa7f83cee5cc00088bdce8c7325dc249`
+- Candidate round: `8` (channel credential integration isolation revalidation)
+- Canonical bundle hash: `sha256:05f5d7ff1d136b6bc0885c0fca45704ba7fa299e112a5b570769676c198af8f1`
 - Base commit: `c45c66107e6740c73a490eab5b015f6afbf0d3a1`
-- Candidate commit: `5cd18536d46a2fc7f5702318ffafb0d0f89b44ba`
+- Candidate commit: `e7a8d51f59ee264689b2a4995be23a6bfa184603`
 - Submitted by: `phase15-worker-codex-01`
 - State: `SEALED_PENDING_SIGNED_VALIDATION`
 - Database submission row: not created
