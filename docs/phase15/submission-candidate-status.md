@@ -2,10 +2,10 @@
 
 - Candidate manifest: `submission-candidate.sealed.json`
 - Pre-attestation draft: `submission-candidate.unsealed.json`
-- Candidate round: `4` (credential and local-path hardening)
-- Canonical bundle hash: `sha256:f61362cbd682f29cf1316127c11a90e4d8b32afb97ef657088900082e51fadc3`
+- Candidate round: `5` (credential rotation disclosure)
+- Canonical bundle hash: `sha256:32349444f6b09c83cfe151cd78317f5296216f89a66c148274c94f1f7f492479`
 - Base commit: `c45c66107e6740c73a490eab5b015f6afbf0d3a1`
-- Candidate commit: `c925132288755ffc28526a00c5bd273baac6754e`
+- Candidate commit: `a0e27e726f30009eb2372cf7fabcbd779ef8e386`
 - Submitted by: `phase15-worker-codex-01`
 - State: `SEALED_PENDING_SIGNED_VALIDATION`
 - Database submission row: not created
@@ -13,7 +13,7 @@
 - Previous reviewed round-2 draft hash: `sha256:6b2df959796ab94d265cb88df0fc847969422c02487fc89bd420632d4c80c723` (stale; never reuse)
 - Previous reviewed round-1 draft hash: `sha256:e47dc7df23b7bf05c1d6445411945fd4f492ec015e572408b42d062325072955` (stale; never reuse)
 
-The worker resolved the planning/development implementation findings, removed the committed database credential, constrained the local database port, replaced the hardcoded home path, and generated a separate sealed manifest attestation that binds the immutable candidate commit without self-reference. Prior draft hashes remain useful only as prevalidation evidence. Real assigned validator principals and signed verdicts for the canonical hash above do not exist yet.
+The worker resolved the planning/development implementation findings, removed the committed database credential, constrained the local database port, replaced the hardcoded home path, and documented the required out-of-band rotation of the historical local database credential. A separate sealed manifest attestation binds the immutable candidate commit without self-reference. Prior draft hashes remain useful only as prevalidation evidence. Real assigned validator principals and signed verdicts for the canonical hash above do not exist yet.
 
 `submission-candidate-status.md` is derived mutable status and is deliberately outside the canonical bundle. The immutable inputs are the candidate manifest, included code/docs, requirements trace, rollback plan, known-issues snapshot, and verification evidence.
 
