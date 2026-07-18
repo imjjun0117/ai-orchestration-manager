@@ -28,8 +28,10 @@ async function main() {
     console.log(JSON.stringify(await rekeyTokens({ channelType, botInstanceId }), null, 2));
     return;
   }
-  const token = process.env.DISCORD_TOKEN;
-  if (!token) throw new Error("DISCORD_TOKEN must be supplied through the environment; never pass tokens on argv");
+  const normalizedChannel = String(channelType).trim().toUpperCase().replace(/[^A-Z0-9]+/g, "_");
+  const tokenEnvName = `${normalizedChannel}_TOKEN`;
+  const token = process.env.CHANNEL_TOKEN || process.env[tokenEnvName];
+  if (!token) throw new Error(`CHANNEL_TOKEN or ${tokenEnvName} must be supplied through the environment; never pass tokens on argv`);
   const result = await storeToken({ channelType, botInstanceId, token, metadata: { source: "environment-import" } });
   console.log(JSON.stringify(result, null, 2));
 }
