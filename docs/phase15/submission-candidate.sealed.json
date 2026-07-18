@@ -1,10 +1,10 @@
 {
   "schemaVersion": 1,
   "phaseId": "phase-15",
-  "submissionRound": 8,
+  "submissionRound": 9,
   "submittedBy": "phase15-worker-codex-01",
   "baseCommitSha": "c45c66107e6740c73a490eab5b015f6afbf0d3a1",
-  "candidateCommitSha": "e7a8d51f59ee264689b2a4995be23a6bfa184603",
+  "candidateCommitSha": "582b8c200d343d9a9030194b03071f16f16ab80d",
   "files": [
     {
       "path": "AI_Manager_Multi_Agent_Discord_Advanced_Spec_v1.1.md",
@@ -172,7 +172,7 @@
       "path": "bot.js",
       "type": "file",
       "mode": "100644",
-      "sha256": "sha256:801afd67fe82a43b04408c6c8e76cf743a37649a979a26ac5488a1848745351e"
+      "sha256": "sha256:c862a0953eb9f6c5ba7977db3dd0f2cb34dc02813860526bf4e64b8e4a4c2bf0"
     },
     {
       "path": ".env.bot-a.example",
@@ -190,7 +190,7 @@
       "path": "docs/channel-adapters.md",
       "type": "file",
       "mode": "100644",
-      "sha256": "sha256:a9612262a70e9326a25ea3a6f432e175a830a5e8943480071d1669644b8f358c"
+      "sha256": "sha256:5f2f27fdbd0e40cccbb61a54c79144790a2eb5582d229e3c687ca3c7701f234f"
     },
     {
       "path": "scripts/channel-credentials.js",
