@@ -2,6 +2,7 @@ const assert = require("node:assert/strict");
 const test = require("node:test");
 
 const credentialService = require("../../src/channels/channelCredentialService");
+const { interactiveSetup } = require("../../scripts/channel-credentials");
 
 test("channel token encryption round-trips without storing plaintext", async () => {
   const previous = process.env.CHANNEL_TOKEN_MASTER_KEY;
@@ -70,6 +71,70 @@ test("re-storing a revoked credential reactivates it", async () => {
     assert.equal(await credentialService.getToken({ channelType: "discord", botInstanceId: "test" }, { db: fakeDb }), null);
     await credentialService.storeToken({ channelType: "discord", botInstanceId: "test", token: "rotated-token" }, { db: fakeDb });
     assert.equal(await credentialService.getToken({ channelType: "discord", botInstanceId: "test" }, { db: fakeDb }), "rotated-token");
+  } finally {
+    if (previous === undefined) delete process.env.CHANNEL_TOKEN_MASTER_KEY;
+    else process.env.CHANNEL_TOKEN_MASTER_KEY = previous;
+  }
+});
+
+test("interactive setup stores a hidden token for the selected role", async () => {
+  const previous = process.env.CHANNEL_TOKEN_MASTER_KEY;
+  process.env.CHANNEL_TOKEN_MASTER_KEY = Buffer.alloc(32, 11).toString("base64");
+  const answers = ["discord", "planning-validator"];
+  const calls = { migrated: [], saved: [] };
+  try {
+    const result = await interactiveSetup({
+      ask: async () => answers.shift(),
+      askSecret: async () => "interactive-secret-token",
+      migrate: async (id) => calls.migrated.push(id),
+      statusLookup: async () => null,
+      save: async (value) => {
+        calls.saved.push(value);
+        return { key_version: 1 };
+      },
+    });
+    assert.deepEqual(calls.migrated, ["016_channel_credentials"]);
+    assert.equal(calls.saved[0].botInstanceId, "planning-validator");
+    assert.equal(calls.saved[0].token, "interactive-secret-token");
+    assert.equal(calls.saved[0].metadata.source, "interactive-setup");
+    assert.deepEqual(result, {
+      configured: true,
+      channelType: "discord",
+      botInstanceId: "planning-validator",
+      status: "ACTIVE",
+      keyVersion: 1,
+    });
+  } finally {
+    if (previous === undefined) delete process.env.CHANNEL_TOKEN_MASTER_KEY;
+    else process.env.CHANNEL_TOKEN_MASTER_KEY = previous;
+  }
+});
+
+test("interactive setup preserves an existing ACTIVE credential by default", async () => {
+  const previous = process.env.CHANNEL_TOKEN_MASTER_KEY;
+  process.env.CHANNEL_TOKEN_MASTER_KEY = Buffer.alloc(32, 12).toString("base64");
+  const answers = ["discord", "worker", "no"];
+  let secretPrompted = false;
+  try {
+    const result = await interactiveSetup({
+      ask: async () => answers.shift(),
+      askSecret: async () => {
+        secretPrompted = true;
+        return "should-not-be-read";
+      },
+      migrate: async () => {},
+      statusLookup: async () => ({ status: "ACTIVE" }),
+      save: async () => {
+        throw new Error("save must not be called");
+      },
+    });
+    assert.equal(secretPrompted, false);
+    assert.deepEqual(result, {
+      configured: false,
+      reason: "existing-active",
+      channelType: "discord",
+      botInstanceId: "worker",
+    });
   } finally {
     if (previous === undefined) delete process.env.CHANNEL_TOKEN_MASTER_KEY;
     else process.env.CHANNEL_TOKEN_MASTER_KEY = previous;

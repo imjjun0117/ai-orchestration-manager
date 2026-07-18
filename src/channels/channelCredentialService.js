@@ -69,6 +69,16 @@ async function getToken({ channelType, botInstanceId }, { db = { query } } = {})
   return result.rows[0] ? decryptToken(result.rows[0]) : null;
 }
 
+async function getCredentialStatus({ channelType, botInstanceId }, { db = { query } } = {}) {
+  const result = await db.query(
+    `SELECT channel_type, bot_instance_id, status, key_version, updated_at
+     FROM channel_credentials
+     WHERE channel_type = $1 AND bot_instance_id = $2`,
+    [channelType, botInstanceId]
+  );
+  return result.rows[0] || null;
+}
+
 async function revokeToken({ channelType, botInstanceId, reason = "operator revocation" }, { db = { query } } = {}) {
   const result = await db.query(
     `UPDATE channel_credentials
@@ -106,6 +116,7 @@ async function rekeyTokens({ channelType = null, botInstanceId = null } = {}, { 
 module.exports = {
   decryptToken,
   encryptToken,
+  getCredentialStatus,
   getToken,
   pool,
   rekeyTokens,

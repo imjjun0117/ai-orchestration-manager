@@ -12,6 +12,15 @@ Apply the table migration:
 npm run migrate:channels
 ```
 
+For an interactive setup, configure the master key and run the guided command. The bot token is entered with terminal echo disabled:
+
+```bash
+export CHANNEL_TOKEN_MASTER_KEY='(secret-manager value)'
+node scripts/channel-credentials.js setup
+```
+
+The wizard asks for the channel and role/bot instance. If an ACTIVE credential already exists, it is preserved unless replacement is explicitly confirmed. A REVOKED credential is reactivated when the replacement token is stored.
+
 Import the token from the process environment without placing it in an argument or file tracked by Git:
 
 ```bash
