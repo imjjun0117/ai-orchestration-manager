@@ -239,18 +239,17 @@ if (!enabled) {
   test("channel credential revoke and rotation lifecycle works against PostgreSQL", async () => {
     const channelType = `discord-${process.pid}`;
     const botInstanceId = `integration-${Date.now()}`;
-    await credentialService.storeToken({ channelType, botInstanceId, token: "integration-token-v1", db: pool });
-    assert.equal(await credentialService.getToken({ channelType, botInstanceId, db: pool }), "integration-token-v1");
+    await credentialService.storeToken({ channelType, botInstanceId, token: "integration-token-v1" }, { db: pool });
+    assert.equal(await credentialService.getToken({ channelType, botInstanceId }, { db: pool }), "integration-token-v1");
     const revoked = await credentialService.revokeToken({
       channelType,
       botInstanceId,
       reason: "integration-test",
-      db: pool,
-    });
+    }, { db: pool });
     assert.equal(revoked.status, "REVOKED");
-    assert.equal(await credentialService.getToken({ channelType, botInstanceId, db: pool }), null);
-    await credentialService.storeToken({ channelType, botInstanceId, token: "integration-token-v2", db: pool });
-    assert.equal(await credentialService.getToken({ channelType, botInstanceId, db: pool }), "integration-token-v2");
+    assert.equal(await credentialService.getToken({ channelType, botInstanceId }, { db: pool }), null);
+    await credentialService.storeToken({ channelType, botInstanceId, token: "integration-token-v2" }, { db: pool });
+    assert.equal(await credentialService.getToken({ channelType, botInstanceId }, { db: pool }), "integration-token-v2");
   });
 
   test("database rejects self-validation assignments", async () => {
