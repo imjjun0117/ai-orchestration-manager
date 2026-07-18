@@ -1,222 +1,294 @@
 {
   "schemaVersion": 1,
   "phaseId": "phase-15",
-  "submissionRound": 5,
+  "submissionRound": 6,
   "submittedBy": "phase15-worker-codex-01",
   "baseCommitSha": "c45c66107e6740c73a490eab5b015f6afbf0d3a1",
-  "candidateCommitSha": "a0e27e726f30009eb2372cf7fabcbd779ef8e386",
+  "candidateCommitSha": "69c709ed732a374a5a6ecd3a88e6c6b10ccba0ac",
   "files": [
     {
       "path": "AI_Manager_Multi_Agent_Discord_Advanced_Spec_v1.1.md",
-      "sha256": "sha256:b650b7b8ef16635a64dba2b4b6b187947d52172c2965c903ad6c6efd747bd572",
+      "type": "file",
       "mode": "100644",
-      "type": "file"
+      "sha256": "sha256:b650b7b8ef16635a64dba2b4b6b187947d52172c2965c903ad6c6efd747bd572"
     },
     {
       "path": "docker-compose.yml",
-      "sha256": "sha256:6e9f1748dd24007ca4becd371cd91dbaf1fa8c9ab408881cbbb99c3252c38f82",
+      "type": "file",
       "mode": "100644",
-      "type": "file"
+      "sha256": "sha256:6e9f1748dd24007ca4becd371cd91dbaf1fa8c9ab408881cbbb99c3252c38f82"
     },
     {
       "path": "docs/phase15/delivery-governance.md",
-      "sha256": "sha256:dd0cbb919c6e7f69736758ca6281e4c4ccf73d908c065a7bac080c28ac12edb1",
+      "type": "file",
       "mode": "100644",
-      "type": "file"
+      "sha256": "sha256:dd0cbb919c6e7f69736758ca6281e4c4ccf73d908c065a7bac080c28ac12edb1"
     },
     {
       "path": "docs/phase15/known-issues.md",
-      "sha256": "sha256:2cccd1c585863d6ccea896e81fb0eab225aa7f474a1c6ce7993320abb9f8cd58",
+      "type": "file",
       "mode": "100644",
-      "type": "file"
+      "sha256": "sha256:2cccd1c585863d6ccea896e81fb0eab225aa7f474a1c6ce7993320abb9f8cd58"
     },
     {
       "path": "docs/phase15/requirements-trace.md",
-      "sha256": "sha256:41853353ae7029af8435fc7b31d2a5b77a4889c96806b8288290028f7e13c0c5",
+      "type": "file",
       "mode": "100644",
-      "type": "file"
+      "sha256": "sha256:41853353ae7029af8435fc7b31d2a5b77a4889c96806b8288290028f7e13c0c5"
     },
     {
       "path": "docs/phase15/rework-findings.md",
-      "sha256": "sha256:eb0a37d235c5e7abc5619352c223b4a33674d9f71dc870db899bbfd62c92bd59",
+      "type": "file",
       "mode": "100644",
-      "type": "file"
+      "sha256": "sha256:eb0a37d235c5e7abc5619352c223b4a33674d9f71dc870db899bbfd62c92bd59"
     },
     {
       "path": "docs/phase15/rollback-plan.md",
-      "sha256": "sha256:08b30627269f3fcf8bea21d4e1a764f9cf148292e7ffb0f4f3f5685339b05265",
+      "type": "file",
       "mode": "100644",
-      "type": "file"
+      "sha256": "sha256:08b30627269f3fcf8bea21d4e1a764f9cf148292e7ffb0f4f3f5685339b05265"
     },
     {
       "path": "docs/phase15/verification-evidence.md",
-      "sha256": "sha256:af5a2136e958bfb9b3b2a6d2322b449d049e41b2fd54af749812f5abd6a1701a",
+      "type": "file",
       "mode": "100644",
-      "type": "file"
+      "sha256": "sha256:af5a2136e958bfb9b3b2a6d2322b449d049e41b2fd54af749812f5abd6a1701a"
     },
     {
       "path": "package.json",
-      "sha256": "sha256:e63e9778ff477934e9d2265e8d656edb29425bc29e29df9f94fc31677b345589",
+      "type": "file",
       "mode": "100644",
-      "type": "file"
+      "sha256": "sha256:a141ccee798935a3e303f3d279bdaf8e8e1384c7543584f4552398cd23448846"
     },
     {
       "path": "scripts/phase15-governance.js",
-      "sha256": "sha256:eefa8ab48304cf8c0722141b59d14c59708225f4efb0e2967517c2d3ce44a509",
+      "type": "file",
       "mode": "100644",
-      "type": "file"
+      "sha256": "sha256:eefa8ab48304cf8c0722141b59d14c59708225f4efb0e2967517c2d3ce44a509"
     },
     {
       "path": "scripts/verify-readiness.js",
-      "sha256": "sha256:a887f1c48daab707208145c571bc980ef39d4af4136908c1fb0bcb8590a4b9b4",
+      "type": "file",
       "mode": "100644",
-      "type": "file"
+      "sha256": "sha256:a887f1c48daab707208145c571bc980ef39d4af4136908c1fb0bcb8590a4b9b4"
     },
     {
       "path": "services/shell.js",
-      "sha256": "sha256:1f0f580d9bc0112a989a3249a52eac28160cb068672b4b831452fd65f596e303",
+      "type": "file",
       "mode": "100644",
-      "type": "file"
+      "sha256": "sha256:1f0f580d9bc0112a989a3249a52eac28160cb068672b4b831452fd65f596e303"
     },
     {
       "path": "src/db/migrationRunner.js",
-      "sha256": "sha256:db6ad91a40cae247fc48b2386a2e9911f7493151e52f184feeeaae481456b066",
+      "type": "file",
       "mode": "100644",
-      "type": "file"
+      "sha256": "sha256:498b8d9583964b7fcb98204e108c58e4a7c17caa3363b7fd8f689b2a1279d845"
     },
     {
       "path": "src/delivery/canonicalSubmissionManifest.js",
-      "sha256": "sha256:4a42473f10959be919e3cdc27190cc00d8e632b30259d40a135c85b5b1618210",
+      "type": "file",
       "mode": "100644",
-      "type": "file"
+      "sha256": "sha256:4a42473f10959be919e3cdc27190cc00d8e632b30259d40a135c85b5b1618210"
     },
     {
       "path": "src/delivery/deliveryBootstrapService.js",
-      "sha256": "sha256:5d8b97c0c9498ea6745843bd2af8509a1a1a8a8f2363630ef627140576d60a5d",
+      "type": "file",
       "mode": "100644",
-      "type": "file"
+      "sha256": "sha256:5d8b97c0c9498ea6745843bd2af8509a1a1a8a8f2363630ef627140576d60a5d"
     },
     {
       "path": "src/delivery/deliveryDb.js",
-      "sha256": "sha256:2da47a4fc941b3c45c07b072ed776c9e57c7b432d0e52af381064443b1b375e6",
+      "type": "file",
       "mode": "100644",
-      "type": "file"
+      "sha256": "sha256:2da47a4fc941b3c45c07b072ed776c9e57c7b432d0e52af381064443b1b375e6"
     },
     {
       "path": "src/delivery/index.js",
-      "sha256": "sha256:713f24b3e5dc3117be0286817838508828a9b493850a8fab549e3beee2f4ab15",
+      "type": "file",
       "mode": "100644",
-      "type": "file"
+      "sha256": "sha256:713f24b3e5dc3117be0286817838508828a9b493850a8fab549e3beee2f4ab15"
     },
     {
       "path": "src/delivery/phaseAssignmentPolicy.js",
-      "sha256": "sha256:36c5c0313121df510d653b50647ecc8e5e93d060d6f0b539623bf7ffe75fb288",
+      "type": "file",
       "mode": "100644",
-      "type": "file"
+      "sha256": "sha256:36c5c0313121df510d653b50647ecc8e5e93d060d6f0b539623bf7ffe75fb288"
     },
     {
       "path": "src/delivery/phaseFindingService.js",
-      "sha256": "sha256:81e2eb91e5b66813d945d786c169899d9a52dce8a9c0ca0cd1a0f71d3e0f9844",
+      "type": "file",
       "mode": "100644",
-      "type": "file"
+      "sha256": "sha256:81e2eb91e5b66813d945d786c169899d9a52dce8a9c0ca0cd1a0f71d3e0f9844"
     },
     {
       "path": "src/delivery/phaseGateService.js",
-      "sha256": "sha256:43b4bf6cd3e161f71d7e222b44f84af2f503d1177bd47a295941dfa7abc25be8",
+      "type": "file",
       "mode": "100644",
-      "type": "file"
+      "sha256": "sha256:43b4bf6cd3e161f71d7e222b44f84af2f503d1177bd47a295941dfa7abc25be8"
     },
     {
       "path": "src/delivery/phaseService.js",
-      "sha256": "sha256:8d79b0f3d0bef0f084fd65da32ea542f408e318ce709693445cae0214f1a69d9",
+      "type": "file",
       "mode": "100644",
-      "type": "file"
+      "sha256": "sha256:8d79b0f3d0bef0f084fd65da32ea542f408e318ce709693445cae0214f1a69d9"
     },
     {
       "path": "src/delivery/phaseSubmissionService.js",
-      "sha256": "sha256:449f581c5cde6f77a910f0a525f3b8cd9e5f78770bf65a430dcdfddfe2d83973",
+      "type": "file",
       "mode": "100644",
-      "type": "file"
+      "sha256": "sha256:449f581c5cde6f77a910f0a525f3b8cd9e5f78770bf65a430dcdfddfe2d83973"
     },
     {
       "path": "src/delivery/phaseValidationService.js",
-      "sha256": "sha256:9bc1f3514e28240cc4ce4c80f4fbfa03769dfb534fe3d1232ab09590134b1fd0",
+      "type": "file",
       "mode": "100644",
-      "type": "file"
+      "sha256": "sha256:9bc1f3514e28240cc4ce4c80f4fbfa03769dfb534fe3d1232ab09590134b1fd0"
     },
     {
       "path": "test/phase15/canonicalSubmissionManifest.test.js",
-      "sha256": "sha256:19e5739418e7affefac28c560cdcab229697ed49e9da43fcdcb6a1412097fc88",
+      "type": "file",
       "mode": "100644",
-      "type": "file"
+      "sha256": "sha256:19e5739418e7affefac28c560cdcab229697ed49e9da43fcdcb6a1412097fc88"
     },
     {
       "path": "test/phase15/databaseIntegration.test.js",
-      "sha256": "sha256:3ead28f01ec3190af45cdcba943b505be3e5da29f74156937d669be502fe0bbe",
+      "type": "file",
       "mode": "100644",
-      "type": "file"
+      "sha256": "sha256:3ead28f01ec3190af45cdcba943b505be3e5da29f74156937d669be502fe0bbe"
     },
     {
       "path": "test/phase15/deliveryBootstrapService.test.js",
-      "sha256": "sha256:2a814dd6affc2cde9f04e90c70cde7f6d7a8c7917189a90137ae6cd2ab7f603e",
+      "type": "file",
       "mode": "100644",
-      "type": "file"
+      "sha256": "sha256:2a814dd6affc2cde9f04e90c70cde7f6d7a8c7917189a90137ae6cd2ab7f603e"
     },
     {
       "path": "test/phase15/phaseAssignmentPolicy.test.js",
-      "sha256": "sha256:7136676e50a8adc13f2630c004eb069cf6e9b31cb2505a8d1f9baeac7bd12ddc",
+      "type": "file",
       "mode": "100644",
-      "type": "file"
+      "sha256": "sha256:7136676e50a8adc13f2630c004eb069cf6e9b31cb2505a8d1f9baeac7bd12ddc"
+    },
+    {
+      "path": "bot.js",
+      "type": "file",
+      "mode": "100644",
+      "sha256": "sha256:801afd67fe82a43b04408c6c8e76cf743a37649a979a26ac5488a1848745351e"
+    },
+    {
+      "path": ".env.bot-a.example",
+      "type": "file",
+      "mode": "100644",
+      "sha256": "sha256:c924d8c264c02b0a3b5b5f45ede34ec60a774d5e06343d1dddf7d25779c39d9b"
+    },
+    {
+      "path": ".env.bot-b.example",
+      "type": "file",
+      "mode": "100644",
+      "sha256": "sha256:cd0a48a88a3d2c760f18b81907fb9c757cd7443ac96c215735455d2dde067a20"
+    },
+    {
+      "path": "docs/channel-adapters.md",
+      "type": "file",
+      "mode": "100644",
+      "sha256": "sha256:03b572b734d007485134e36dabdbff59f21c0316e69ce21261773434f344d3a9"
+    },
+    {
+      "path": "scripts/channel-credentials.js",
+      "type": "file",
+      "mode": "100644",
+      "sha256": "sha256:da1c8eeddcf20dc4c849a9ab3c231fc7361af2244ddd3caf6c796ba4330d88ec"
+    },
+    {
+      "path": "src/channels/channelAdapter.js",
+      "type": "file",
+      "mode": "100644",
+      "sha256": "sha256:15aebb7deb82e56d2515a7765128a3ed26379825c8a30549421263c459306ea6"
+    },
+    {
+      "path": "src/channels/channelCredentialService.js",
+      "type": "file",
+      "mode": "100644",
+      "sha256": "sha256:0202eee7f8bee715e7aa1572ef560b09032df960c5fb0fbd825a2cbe0e1feb41"
+    },
+    {
+      "path": "src/channels/discordAdapter.js",
+      "type": "file",
+      "mode": "100644",
+      "sha256": "sha256:cd5321cc8cbbc2ce42348680a6ceefbdb86e8401c4bd7fbc74eab885d17812cb"
+    },
+    {
+      "path": "src/channels/index.js",
+      "type": "file",
+      "mode": "100644",
+      "sha256": "sha256:ff3669cac8ca9c6bf1444ce66a51eb7697ab9cd5d8e55153c9dd9c6f70faa02c"
+    },
+    {
+      "path": "test/phase15/channelCredentialService.test.js",
+      "type": "file",
+      "mode": "100644",
+      "sha256": "sha256:1262cad372a39c9024aaee687c2f40f08d6533a3087704168fa712024acdfa70"
     }
   ],
   "migrationArtifacts": [
     {
       "path": "src/db/migrations/015_delivery_governance.down.sql",
-      "sha256": "sha256:5ad5876a6e474bf239c21f7df378e8466f0847c7d2ffcf19771da0718d895491",
+      "type": "file",
       "mode": "100644",
-      "type": "file"
+      "sha256": "sha256:5ad5876a6e474bf239c21f7df378e8466f0847c7d2ffcf19771da0718d895491"
     },
     {
       "path": "src/db/migrations/015_delivery_governance.up.sql",
-      "sha256": "sha256:39b410f974ba07f723eaa0a59f0993ea6fd754af703e1a16ec1b65104d09721e",
+      "type": "file",
       "mode": "100644",
-      "type": "file"
+      "sha256": "sha256:39b410f974ba07f723eaa0a59f0993ea6fd754af703e1a16ec1b65104d09721e"
     },
     {
       "path": "src/db/migrations/015_delivery_governance_operations.down.sql",
-      "sha256": "sha256:fc70d0df1fe13b923b8f96b8443fec797fa0ddf2608a529737dfb7b3e0beb790",
+      "type": "file",
       "mode": "100644",
-      "type": "file"
+      "sha256": "sha256:fc70d0df1fe13b923b8f96b8443fec797fa0ddf2608a529737dfb7b3e0beb790"
     },
     {
       "path": "src/db/migrations/015_delivery_governance_operations.up.sql",
-      "sha256": "sha256:23b76dc1f805b0bcc0d196dc17b1e923f8634fd7cb6fb29a17e4584cdfa2cead",
+      "type": "file",
       "mode": "100644",
-      "type": "file"
+      "sha256": "sha256:23b76dc1f805b0bcc0d196dc17b1e923f8634fd7cb6fb29a17e4584cdfa2cead"
     },
     {
       "path": "src/db/migrations/015_delivery_governance_rework.down.sql",
-      "sha256": "sha256:31ce3ab54c32f8c202b90c556c128b0dc45c48cc67cbfefb0561184e3ab20903",
+      "type": "file",
       "mode": "100644",
-      "type": "file"
+      "sha256": "sha256:31ce3ab54c32f8c202b90c556c128b0dc45c48cc67cbfefb0561184e3ab20903"
     },
     {
       "path": "src/db/migrations/015_delivery_governance_rework.up.sql",
-      "sha256": "sha256:13ebef15f2ed76d52f8b887ccc7b3e018dd9eb57146f980fc727ad10d0ed84db",
+      "type": "file",
       "mode": "100644",
-      "type": "file"
+      "sha256": "sha256:13ebef15f2ed76d52f8b887ccc7b3e018dd9eb57146f980fc727ad10d0ed84db"
     },
     {
       "path": "src/db/migrations/015_delivery_governance_security.down.sql",
-      "sha256": "sha256:557cd632b36f8f76bbc63869573fd07d773d23f7c41ab3c3605dd4a443d6ac39",
+      "type": "file",
       "mode": "100644",
-      "type": "file"
+      "sha256": "sha256:557cd632b36f8f76bbc63869573fd07d773d23f7c41ab3c3605dd4a443d6ac39"
     },
     {
       "path": "src/db/migrations/015_delivery_governance_security.up.sql",
-      "sha256": "sha256:b31614a1386c3f14c5698bcf9728307b0bac9edcef4427322c71a163bb09b3b3",
+      "type": "file",
       "mode": "100644",
-      "type": "file"
+      "sha256": "sha256:b31614a1386c3f14c5698bcf9728307b0bac9edcef4427322c71a163bb09b3b3"
+    },
+    {
+      "path": "src/db/migrations/016_channel_credentials.down.sql",
+      "type": "file",
+      "mode": "100644",
+      "sha256": "sha256:f4d255a2793f08e1f30e0b3592b744cf32dbc363801dbbd8f49c1ca982ff7015"
+    },
+    {
+      "path": "src/db/migrations/016_channel_credentials.up.sql",
+      "type": "file",
+      "mode": "100644",
+      "sha256": "sha256:c6b3afb96de3277c6840525d4a22516510c69fb889fd6b5af693a776f77e113b"
     }
   ],
   "testEvidence": [
