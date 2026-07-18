@@ -1,10 +1,10 @@
 {
   "schemaVersion": 1,
   "phaseId": "phase-15",
-  "submissionRound": 10,
+  "submissionRound": 11,
   "submittedBy": "phase15-worker-codex-01",
   "baseCommitSha": "c45c66107e6740c73a490eab5b015f6afbf0d3a1",
-  "candidateCommitSha": "ae97b026420a94eddbc6719d228fedbecc80435b",
+  "candidateCommitSha": "1b890e36ea7b81dd9bd645301201920d81f42bf0",
   "files": [
     {
       "path": "AI_Manager_Multi_Agent_Discord_Advanced_Spec_v1.1.md",
@@ -190,13 +190,13 @@
       "path": "docs/channel-adapters.md",
       "type": "file",
       "mode": "100644",
-      "sha256": "sha256:e912bbd274b7d2b37ec6590841a0b41a8839d9846280f909afbc1401781dd6bc"
+      "sha256": "sha256:4ff7529dbb4029ecbfad3ea317c48dbf188e2f96803497f9efae743761ffd1b7"
     },
     {
       "path": "scripts/channel-credentials.js",
       "type": "file",
       "mode": "100644",
-      "sha256": "sha256:556d22bba7b07f5d3da3a68accdf363734a70a09567181316665b7b159ccd697"
+      "sha256": "sha256:3242a83c59eb8845653025ea64357dcee72dcd826566f35e6e9b8e44636d1401"
     },
     {
       "path": "src/channels/channelAdapter.js",
@@ -226,7 +226,7 @@
       "path": "test/phase15/channelCredentialService.test.js",
       "type": "file",
       "mode": "100644",
-      "sha256": "sha256:06c07bfd3e962ff5902bad3a402d2388f3477a851160822ca9c143227f0015ab"
+      "sha256": "sha256:0e7171d3f534723e3f5c8f33d0d31a0bc1cd99aa37cb7a01e00f7c52332c13f4"
     }
   ],
   "migrationArtifacts": [
