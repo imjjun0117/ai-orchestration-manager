@@ -168,6 +168,7 @@ function walkJsFiles(rootDir) {
 function appJsFiles() {
   const files = [
     path.join(repoRoot, "bot.js"),
+    path.join(repoRoot, "bot-runtime.js"),
     ...walkJsFiles(path.join(repoRoot, "agents")),
     ...walkJsFiles(path.join(repoRoot, "services")),
     ...walkJsFiles(path.join(repoRoot, "src")),

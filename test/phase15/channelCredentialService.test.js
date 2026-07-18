@@ -1,10 +1,14 @@
 const assert = require("node:assert/strict");
+const fs = require("node:fs");
+const os = require("node:os");
 const path = require("node:path");
 const { spawnSync } = require("node:child_process");
 const test = require("node:test");
 
 const credentialService = require("../../src/channels/channelCredentialService");
 const { interactiveSetup } = require("../../scripts/channel-credentials");
+const DiscordAdapter = require("../../src/channels/discordAdapter");
+const { ensureMasterKey, requestedRole, selectRole } = require("../../bot");
 
 test("channel token encryption round-trips without storing plaintext", async () => {
   const previous = process.env.CHANNEL_TOKEN_MASTER_KEY;
@@ -185,4 +189,43 @@ test("interactive setup validates the master key before prompting", async () => 
     if (previous === undefined) delete process.env.CHANNEL_TOKEN_MASTER_KEY;
     else process.env.CHANNEL_TOKEN_MASTER_KEY = previous;
   }
+});
+
+test("bot launcher selects supported roles by number or name", async () => {
+  assert.equal(await selectRole(async () => "2"), "planning-validator");
+  assert.equal(await selectRole(async () => "gate-admin"), "gate-admin");
+  await assert.rejects(selectRole(async () => "unknown"), /Unsupported role/);
+  assert.equal(requestedRole(["--role", "worker"]), "worker");
+  assert.equal(requestedRole([]), null);
+});
+
+test("bot launcher creates a protected local master key without exposing it", async () => {
+  const previous = process.env.CHANNEL_TOKEN_MASTER_KEY;
+  const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "bot-launcher-key-"));
+  const targetEnvFile = path.join(tempDir, ".env");
+  try {
+    delete process.env.CHANNEL_TOKEN_MASTER_KEY;
+    assert.equal(await ensureMasterKey(async () => "yes", { targetEnvFile }), true);
+    const contents = fs.readFileSync(targetEnvFile, "utf8");
+    assert.match(contents, /^CHANNEL_TOKEN_MASTER_KEY=[A-Za-z0-9+/]+={0,2}\n$/);
+    assert.equal(Buffer.from(process.env.CHANNEL_TOKEN_MASTER_KEY, "base64").length, 32);
+    assert.equal(fs.statSync(targetEnvFile).mode & 0o777, 0o600);
+  } finally {
+    fs.rmSync(tempDir, { recursive: true, force: true });
+    if (previous === undefined) delete process.env.CHANNEL_TOKEN_MASTER_KEY;
+    else process.env.CHANNEL_TOKEN_MASTER_KEY = previous;
+  }
+});
+
+test("DiscordAdapter subscribes to clientReady without deprecated ready events", () => {
+  const events = [];
+  const client = {
+    once: (event, handler) => events.push({ event, handler }),
+    on: () => {},
+    login: async () => {},
+  };
+  const adapter = new DiscordAdapter(client);
+  const handler = () => {};
+  adapter.onReady(handler);
+  assert.deepEqual(events, [{ event: "clientReady", handler }]);
 });

@@ -54,7 +54,9 @@ For production, inject `CHANNEL_TOKEN_MASTER_KEY` from a secret manager and rest
 
 ## Role-specific bot instances
 
-Select the credential for a role with `--role`; the role maps to `bot_instance_id`:
+Running `node bot.js` in a terminal starts a guided launcher. It asks for one of the supported roles, generates and stores a local master key in `.env` with mode `0600` when approved and missing, and then reuses or replaces the role's encrypted DB credential before launching the bot. The token is entered without terminal echo.
+
+For direct or unattended startup, select the credential with `--role`; the role maps to `bot_instance_id`:
 
 ```bash
 node bot.js --role worker
@@ -63,4 +65,4 @@ node bot.js --role development-validator
 node bot.js --role gate-admin
 ```
 
-Each role must have its own active credential when separate Discord applications are used. `BOT_INSTANCE_ID` remains supported and takes precedence when explicitly set.
+Each role must have its own active credential when separate Discord applications are used. `--role` takes precedence over `BOT_INSTANCE_ID` and uses the encrypted DB credential instead of the legacy common `DISCORD_TOKEN`. `BOT_INSTANCE_ID` remains supported for unattended environments that do not pass `--role`.

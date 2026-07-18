@@ -12,7 +12,7 @@ class DiscordAdapter extends ChannelAdapter {
   }
 
   onReady(handler) {
-    this.client.once("ready", handler);
+    this.client.once("clientReady", handler);
   }
 
   login(token) {
