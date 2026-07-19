@@ -23,4 +23,12 @@ Worker verification:
 
 This status file and the sealed manifest are attestation metadata and are intentionally outside the candidate bundle to avoid a circular self-hash. They may be committed after the candidate commit without changing the candidate tree.
 
-Current Gate state: sealed DB submission is not created yet. The next operation is to commit this attestation metadata, seal Phase 16 submission round 1 in the Delivery Governance DB, and run independent planning/development validation against the exact bundle hash above.
+Current Gate state:
+
+- DB submission: `phase16-submission-round-1`, `SEALED`
+- Phase status: `VALIDATION_IN_PROGRESS`
+- Phase row version: `2`
+- Planning validation: `PENDING`
+- Development validation: `PENDING`
+
+The next operation is independent planning and development validation against the exact sealed submission and bundle hash above. `CODER_WRITE_ENABLED` must remain disabled until both verdicts are accepted by the Gate.
