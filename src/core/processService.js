@@ -126,10 +126,30 @@ async function killProcessTree({ pid, pgid = null, killGraceMs = 5000 } = {}) {
   };
 }
 
+function pauseProcessTree({ pid, pgid = null } = {}) {
+  const normalizedPid = parsePid(pid);
+  const normalizedPgid = pgid ? parsePid(pgid) : null;
+  if (!isTargetAlive({ pid: normalizedPid, pgid: normalizedPgid })) {
+    throw new Error("cannot pause an exited process tree");
+  }
+  return signalTarget({ pid: normalizedPid, pgid: normalizedPgid, signal: "SIGSTOP" });
+}
+
+function resumeProcessTree({ pid, pgid = null } = {}) {
+  const normalizedPid = parsePid(pid);
+  const normalizedPgid = pgid ? parsePid(pgid) : null;
+  if (!isTargetAlive({ pid: normalizedPid, pgid: normalizedPgid })) {
+    throw new Error("cannot resume an exited process tree");
+  }
+  return signalTarget({ pid: normalizedPid, pgid: normalizedPgid, signal: "SIGCONT" });
+}
+
 module.exports = {
   isProcessAlive,
   isProcessGroupAlive,
   killProcess,
   killProcessTree,
   parsePid,
+  pauseProcessTree,
+  resumeProcessTree,
 };

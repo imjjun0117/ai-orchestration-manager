@@ -24,6 +24,10 @@ const MIGRATIONS = Object.freeze({
     up: path.join(__dirname, "migrations", "016_channel_credentials.up.sql"),
     down: path.join(__dirname, "migrations", "016_channel_credentials.down.sql"),
   },
+  "017_workspace_safety": {
+    up: path.join(__dirname, "migrations", "017_workspace_safety.up.sql"),
+    down: path.join(__dirname, "migrations", "017_workspace_safety.down.sql"),
+  },
 });
 
 function migrationSource(id, direction) {

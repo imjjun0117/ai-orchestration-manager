@@ -13,9 +13,14 @@
     "phase15": "node scripts/phase15-governance.js",
     "migrate:phase15": "node scripts/phase15-governance.js migrate",
     "migrate:channels": "node scripts/channel-credentials.js migrate",
-    "test": "node --test test/phase15/*.test.js",
+    "phase16": "node scripts/phase16-workspace.js",
+    "migrate:phase16": "node scripts/phase16-workspace.js migrate",
+    "test": "node --test test/phase15/*.test.js test/phase16/*.test.js",
     "test:phase15": "node --test test/phase15/*.test.js",
-    "test:phase15:db": "PHASE15_DB_TEST=1 node --test test/phase15/databaseIntegration.test.js"
+    "test:phase15:db": "PHASE15_DB_TEST=1 node --test test/phase15/databaseIntegration.test.js",
+    "test:phase16": "node --test test/phase16/*.test.js",
+    "test:phase16:db": "PHASE16_DB_TEST=1 node --test test/phase16/databaseIntegration.test.js",
+    "test:phase16:container": "PHASE16_CONTAINER_TEST=1 node --test test/phase16/containerIntegration.test.js"
   },
   "keywords": [],
   "author": "",

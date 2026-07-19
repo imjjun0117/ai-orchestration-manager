@@ -99,9 +99,148 @@ async function resolvePendingAction(taskId, action, { approved, resolvedBy, reas
   return rows[0] || null;
 }
 
+/**
+ * Phase 16 bound approval. The pending row is created only when the immutable artifact
+ * and every supplied Git/context hash match the stored candidate artifact.
+ */
+async function openBoundApproval(
+  {
+    taskId,
+    action = "commit_approval",
+    requestedBy,
+    artifactId,
+    artifactHash,
+    contextManifestHash,
+    baseCommitSha,
+    candidateCommitSha,
+    workspaceId,
+    leaseOwnerOperationId,
+    fencingToken,
+    delegationScope = {},
+    expectedTaskState = null,
+    expectedTaskVersion = null,
+    expiresAt = null,
+  },
+  { db: database = db } = {}
+) {
+  const allowedActorIds = Array.isArray(delegationScope.allowedActorIds)
+    ? [...new Set(delegationScope.allowedActorIds.map(String).map((value) => value.trim()).filter(Boolean))]
+    : [];
+  const allowedTargetRefs = Array.isArray(delegationScope.allowedTargetRefs)
+    ? [...new Set(delegationScope.allowedTargetRefs.map(String).map((value) => value.trim()).filter(Boolean))]
+    : [];
+  if (allowedActorIds.length === 0 || allowedTargetRefs.length === 0) {
+    throw new Error("bound approval requires non-empty allowedActorIds and allowedTargetRefs delegation scope");
+  }
+  if (!String(expectedTaskState || "").trim()) {
+    throw new Error("bound approval requires expectedTaskState");
+  }
+  if (!Number.isInteger(Number(expectedTaskVersion)) || Number(expectedTaskVersion) < 0) {
+    throw new Error("bound approval requires a non-negative expectedTaskVersion");
+  }
+  const expiry = expiresAt instanceof Date ? expiresAt : new Date(expiresAt);
+  if (!expiresAt || Number.isNaN(expiry.getTime()) || expiry.getTime() <= Date.now()) {
+    throw new Error("bound approval requires a future expiresAt");
+  }
+  const normalizedScope = { ...delegationScope, allowedActorIds, allowedTargetRefs };
+  const { rows } = await database.query(
+    `INSERT INTO approvals(
+       task_id, action, status, requested_by, artifact_id, artifact_hash,
+       context_manifest_hash, base_commit_sha, candidate_commit_sha,
+       workspace_id, lease_owner_operation_id, fencing_token,
+       delegation_scope, expected_task_state, expected_task_version, expires_at
+     )
+     SELECT $1, $2, 'PENDING', $3, a.id, a.artifact_hash,
+            a.context_manifest_hash, a.base_commit_sha, a.candidate_commit_sha,
+            $9, $10, $11, $12::jsonb, $13, $14, $15
+     FROM artifacts a
+     LEFT JOIN tasks t ON t.id = $1
+     WHERE a.id = $4
+       AND a.task_id IS NOT DISTINCT FROM $1
+       AND a.artifact_hash = $5
+       AND a.context_manifest_hash = $6
+       AND a.base_commit_sha = $7
+       AND a.candidate_commit_sha = $8
+       AND t.status = $13
+       AND t.row_version = $14
+     ON CONFLICT (task_id, action) WHERE (status = 'PENDING') DO NOTHING
+     RETURNING *`,
+    [
+      taskId,
+      action,
+      requestedBy,
+      artifactId,
+      artifactHash,
+      contextManifestHash,
+      baseCommitSha,
+      candidateCommitSha,
+      workspaceId,
+      leaseOwnerOperationId,
+      fencingToken,
+      JSON.stringify(normalizedScope),
+      expectedTaskState,
+      Number(expectedTaskVersion),
+      expiry,
+    ]
+  );
+  if (!rows[0]) throw new Error("bound approval was not created; artifact, task state, or pending uniqueness check failed");
+  return rows[0];
+}
+
+async function resolveBoundApproval(
+  {
+    approvalId,
+    artifactId,
+    artifactHash,
+    contextManifestHash,
+    baseCommitSha,
+    candidateCommitSha,
+    approved,
+    resolvedBy,
+    reason = null,
+  },
+  { db: database = db } = {}
+) {
+  const { rows } = await database.query(
+    `UPDATE approvals
+     SET status = $7, approved_by = $8, reason = $9, updated_at = CURRENT_TIMESTAMP
+     WHERE id = $1
+       AND status = 'PENDING'
+       AND artifact_id = $2
+       AND artifact_hash = $3
+       AND context_manifest_hash = $4
+       AND base_commit_sha = $5
+       AND candidate_commit_sha = $6
+       AND (expires_at IS NULL OR expires_at > CURRENT_TIMESTAMP)
+       AND requested_by IS DISTINCT FROM $8
+       AND EXISTS (
+         SELECT 1 FROM tasks t
+         WHERE t.id = approvals.task_id
+           AND t.status = approvals.expected_task_state
+           AND t.row_version = approvals.expected_task_version
+       )
+     RETURNING *`,
+    [
+      approvalId,
+      artifactId,
+      artifactHash,
+      contextManifestHash,
+      baseCommitSha,
+      candidateCommitSha,
+      approved ? "APPROVED" : "REJECTED",
+      resolvedBy,
+      reason,
+    ]
+  );
+  if (!rows[0]) throw new Error("bound approval resolution rejected because its state or artifact binding changed");
+  return rows[0];
+}
+
 module.exports = {
   openApproval,
+  openBoundApproval,
   getLatestPendingApproval,
+  resolveBoundApproval,
   resolveLatest,
   resolvePendingAction,
 };

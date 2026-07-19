@@ -105,6 +105,16 @@ async function runQaAgent(task, { cwd }) {
     });
     return { passed: true, skipped: false, output };
   } catch (err) {
+    if (err && err.code === "WORKSPACE_POLICY_BLOCKED") {
+      await agentResultService.saveResult({
+        taskId: task.id,
+        agentName: "qa",
+        resultType: "error",
+        content: `QA workspace policy blocked execution: ${err.message}`,
+        modelName: null,
+      });
+      throw err;
+    }
     if (isCommandGuardBlock(err)) {
       const message = `테스트 명령(${commandLabel})이 보안 정책에 의해 차단되어 QA를 건너뛰었습니다: ${err.message}`;
       await agentResultService.saveResult({

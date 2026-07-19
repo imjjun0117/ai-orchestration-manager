@@ -4,6 +4,7 @@ const { spawn } = require("child_process");
 const pathGuard = require("../src/core/pathGuard");
 const commandGuard = require("../src/core/commandGuard");
 const hostIdentity = require("../src/core/hostIdentity");
+const { assertRegisteredAgentWorkspace } = require("../src/workspace/workspaceExecutionPolicy");
 const db = require("../src/db");
 const logger = require("./logger");
 
@@ -176,6 +177,7 @@ async function runCommand(command, args = [], options = {}) {
   const realCwd = pathGuard.assertInsideProjectRoot(".", cwd);
 
   if (!trusted) {
+    await assertRegisteredAgentWorkspace({ agentName, taskId, cwd: realCwd });
     const context = { taskId, agentName };
     await commandGuard.assertCommandAllowed(command, args, context);
     await commandGuard.assertArgsSafe(command, args, cwd, context);

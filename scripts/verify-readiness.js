@@ -12,6 +12,7 @@ const phase15SecurityMigrationPath = path.join(repoRoot, "src/db/migrations/015_
 const phase15ReworkMigrationPath = path.join(repoRoot, "src/db/migrations/015_delivery_governance_rework.up.sql");
 const phase15OperationsMigrationPath = path.join(repoRoot, "src/db/migrations/015_delivery_governance_operations.up.sql");
 const channelCredentialsMigrationPath = path.join(repoRoot, "src/db/migrations/016_channel_credentials.up.sql");
+const phase16MigrationPath = path.join(repoRoot, "src/db/migrations/017_workspace_safety.up.sql");
 const packagePath = path.join(repoRoot, "package.json");
 
 const REQUIRED_ENV_KEYS = [
@@ -68,6 +69,8 @@ const REQUIRED_DB_COLUMNS = {
     "current_pgid",
     "current_host_id",
     "current_owner_instance_id",
+    "control_state",
+    "row_version",
   ],
   command_logs: ["timed_out", "killed"],
   workspace_locks: [
@@ -100,6 +103,47 @@ const REQUIRED_DB_COLUMNS = {
     "key_version",
     "status",
   ],
+  approvals: [
+    "id",
+    "task_id",
+    "status",
+    "artifact_id",
+    "artifact_hash",
+    "context_manifest_hash",
+    "base_commit_sha",
+    "candidate_commit_sha",
+    "workspace_id",
+    "lease_owner_operation_id",
+    "fencing_token",
+    "delegation_scope",
+    "expected_task_state",
+    "expected_task_version",
+    "expires_at",
+  ],
+  workspace_lock_heads: ["workspace_id", "current_fencing_token", "updated_at"],
+  workspace_leases: [
+    "lease_id",
+    "workspace_id",
+    "lease_owner_instance_id",
+    "lease_owner_task_id",
+    "lease_owner_operation_id",
+    "fencing_token",
+    "mode",
+    "expires_at",
+    "released_at",
+  ],
+  isolated_workspaces: ["id", "task_id", "lease_id", "workspace_path", "base_commit_sha", "status"],
+  artifacts: [
+    "id",
+    "task_id",
+    "artifact_hash",
+    "context_manifest_hash",
+    "base_commit_sha",
+    "candidate_commit_sha",
+    "manifest_json",
+  ],
+  workspace_finalizations: ["id", "approval_id", "artifact_id", "fencing_token", "target_ref", "status"],
+  workspace_safety_events: ["id", "workspace_id", "task_id", "event_type", "event_payload"],
 };
 
 function parseArgs(argv) {
@@ -225,6 +269,11 @@ function checkPackageScripts() {
     "migrate:phase15",
     "test:phase15",
     "test:phase15:db",
+    "phase16",
+    "migrate:phase16",
+    "test:phase16",
+    "test:phase16:db",
+    "test:phase16:container",
   ];
   for (const script of requiredScripts) {
     assert(scripts[script], `package.json is missing script: ${script}`);
@@ -298,7 +347,24 @@ function checkSchemaStatic() {
   ]) {
     assert(channelCredentialsMigration.includes(snippet), `channel credential migration is missing required snippet: ${snippet}`);
   }
-  pass("schema and bundled Phase 15 migration static checks");
+  assert(fs.existsSync(phase16MigrationPath), "Phase 16 workspace safety migration is missing");
+  const phase16Migration = fs.readFileSync(phase16MigrationPath, "utf8");
+  for (const snippet of [
+    "CREATE TABLE workspace_lock_heads",
+    "CREATE TABLE workspace_leases",
+    "CREATE TABLE isolated_workspaces",
+    "CREATE TABLE artifacts",
+    "CREATE TABLE workspace_finalizations",
+    "CREATE OR REPLACE FUNCTION acquire_workspace_lease",
+    "CREATE OR REPLACE FUNCTION claim_candidate_finalization",
+    "CREATE OR REPLACE FUNCTION complete_candidate_finalization",
+    "trg_phase16_artifact_immutable",
+    "trg_phase16_event_append_only",
+    "REVOKE ALL ON FUNCTION acquire_workspace_lease",
+  ]) {
+    assert(phase16Migration.includes(snippet), `Phase 16 migration is missing required snippet: ${snippet}`);
+  }
+  pass("schema and bundled migration static checks");
 }
 
 function checkDocs() {
@@ -307,6 +373,10 @@ function checkDocs() {
     "docs/phase13-stress.md",
     "docs/phase14-readiness.md",
     "docs/phase15/delivery-governance.md",
+    "docs/phase16/workspace-safety.md",
+    "docs/phase16/requirements-trace.md",
+    "docs/phase16/rollback-plan.md",
+    "docs/phase16/reconciliation-runbook.md",
   ];
   for (const doc of requiredDocs) {
     assert(fs.existsSync(path.join(repoRoot, doc)), `${doc} is missing`);
@@ -360,17 +430,25 @@ async function checkLiveDatabase() {
       "replace_phase_assignment",
       "gate_delivery_phase",
     ];
+    const requiredPhase16Functions = [
+      "acquire_workspace_lease",
+      "heartbeat_workspace_lease",
+      "release_workspace_lease",
+      "claim_candidate_finalization",
+      "complete_candidate_finalization",
+    ];
+    const requiredFunctions = [...requiredPhase15Functions, ...requiredPhase16Functions];
     const { rows: functionRows } = await db.query(
       `SELECT DISTINCT proname
        FROM pg_proc
        JOIN pg_namespace ON pg_namespace.oid = pg_proc.pronamespace
        WHERE pg_namespace.nspname = 'public'
          AND proname = ANY($1)`,
-      [requiredPhase15Functions]
+      [requiredFunctions]
     );
     const actualFunctions = new Set(functionRows.map((row) => row.proname));
-    for (const functionName of requiredPhase15Functions) {
-      assert(actualFunctions.has(functionName), `live DB is missing Phase 15 function ${functionName}`);
+    for (const functionName of requiredFunctions) {
+      assert(actualFunctions.has(functionName), `live DB is missing required function ${functionName}`);
     }
     const { rows: publicRoutineGrants } = await db.query(
       `SELECT routine_name
@@ -379,7 +457,7 @@ async function checkLiveDatabase() {
          AND grantee = 'PUBLIC'
          AND privilege_type = 'EXECUTE'
          AND routine_name = ANY($1)`,
-      [requiredPhase15Functions]
+      [requiredFunctions]
     );
     assert(publicRoutineGrants.length === 0, `Phase 15 functions still executable by PUBLIC: ${publicRoutineGrants.map((row) => row.routine_name).join(", ")}`);
     const { rows: publicTableGrants } = await db.query(
@@ -387,7 +465,10 @@ async function checkLiveDatabase() {
        FROM information_schema.table_privileges
        WHERE table_schema = 'public'
          AND grantee = 'PUBLIC'
-         AND (table_name LIKE 'delivery_%' OR table_name LIKE 'phase_%' OR table_name = 'channel_credentials')`
+         AND (
+           table_name LIKE 'delivery_%' OR table_name LIKE 'phase_%' OR table_name = 'channel_credentials'
+           OR table_name IN ('workspace_lock_heads', 'workspace_leases', 'isolated_workspaces', 'artifacts', 'workspace_finalizations', 'workspace_safety_events')
+         )`
     );
     assert(
       publicTableGrants.length === 0,

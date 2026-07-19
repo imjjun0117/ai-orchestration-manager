@@ -1,0 +1,37 @@
+# Phase 16 Requirements Trace
+
+| ID | 요구사항 | 구현 | 검증 |
+|---|---|---|---|
+| WS-001 | task별 clone, canonical remote 제거 | `isolatedWorkspaceService.js` | DB integration: orphaned isolated workspace |
+| WS-002 | canonical fallback 금지 | `workspaceExecutionPolicy.js`, `featureFlags.js`, `services/shell.js` | unit: Coder/QA fallback 거부 |
+| WS-003 | container sandbox path/network/resource 제한 | `sandboxService.js` | unit policy + actual Docker escape suite |
+| WS-004 | 20-way shared lease | `acquire_workspace_lease` | DB integration: twenty readers |
+| WS-005 | exclusive 경쟁·fencing 증가 | lease procedures | DB integration: one winner, stale heartbeat |
+| WS-006 | generic operation owner | `workspace_leases.lease_owner_operation_id` | migration + lease integration tests |
+| WS-007 | canonical context hash | `contextManifestService.js` | unit: instruction/scope/version hash 변화 |
+| WS-008 | candidate/diff/file manifest | `artifactService.js` | unit: raw file/binary diff/stat 재현 |
+| WS-009 | artifact immutable, supersession stale | migration triggers | DB integration: mutation 거부, claim 중 supersede 거부 |
+| WS-010 | approval exact binding | `approvalService.js`, approval columns | DB integration: hash/context mismatch 거부 |
+| WS-011 | state/version/expiry/delegation binding | service + `claim_candidate_finalization` | DB integration: self approval, version, actor scope 거부 |
+| WS-012 | competing finalization exactly one | unique claim + FINALIZE lease | DB integration: two claims one winner |
+| WS-013 | base ref CAS와 bare canonical | `finalizerService.js` | DB/Git integration: atomic `update-ref` |
+| WS-014 | stale finalizer 차단 | fencing checks in claim/complete | DB integration: released/stale fence 성공 완료 거부 |
+| WS-015 | pause/resume process group | `processService.js`, `taskControlService.js` | unit real PGID + DB state test |
+| WS-016 | cancel intent before kill | `killTaskProcess` | DB integration checks state inside kill callback |
+| WS-017 | orphan process/workspace reconciliation | task/isolated workspace services | DB integration: dead owner and expired lease cleanup |
+| WS-018 | append-only audit | event trigger | DB integration + PUBLIC privilege checks |
+| WS-019 | migration rollback | `017_workspace_safety.down.sql`, CLI guard | DB integration down/reapply, legacy preservation |
+| WS-020 | Gate 전 write disabled | dual feature flags | unit fail-closed; operator docs |
+
+검증 명령:
+
+```bash
+npm test
+npm run test:phase16:db
+npm run test:phase16:container
+npm run verify
+npm run verify:db
+git diff --check
+```
+
+DB integration은 매 실행마다 별도 database를 생성하고 정상 연결 종료 후 제거한다. 라이브 DB를 테스트 대상으로 사용하지 않는다.
