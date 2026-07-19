@@ -16,6 +16,8 @@ const phase16MigrationPath = path.join(repoRoot, "src/db/migrations/017_workspac
 const phase16ReworkMigrationPath = path.join(repoRoot, "src/db/migrations/017_workspace_safety_rework.up.sql");
 const botRuntimePath = path.join(repoRoot, "bot-runtime.js");
 const phase16CliPath = path.join(repoRoot, "scripts/phase16-workspace.js");
+const phase16SandboxPath = path.join(repoRoot, "src/workspace/sandboxService.js");
+const shellServicePath = path.join(repoRoot, "services/shell.js");
 const packagePath = path.join(repoRoot, "package.json");
 
 const REQUIRED_ENV_KEYS = [
@@ -387,8 +389,24 @@ function checkSchemaStatic() {
     "taskControlService.resumeTaskProcess",
     "taskControlService.killTaskProcess",
     "approvalService.getBoundApprovalDisplay",
+    "sandboxService.runRegisteredNativeAgent",
+    "sandboxService.runSandboxed",
+    "phase16QaCommand",
+    'agentName: "qa"',
   ]) {
     assert(botRuntime.includes(snippet), `Phase 16 Discord runtime wiring is missing: ${snippet}`);
+  }
+  const phase16Sandbox = fs.readFileSync(phase16SandboxPath, "utf8");
+  for (const snippet of [
+    "assertRegisteredAgentWorkspace",
+    "container sandbox requires a taskId",
+    "native agent sandbox network access is not permitted",
+  ]) {
+    assert(phase16Sandbox.includes(snippet), `Phase 16 sandbox registration enforcement is missing: ${snippet}`);
+  }
+  const shellService = fs.readFileSync(shellServicePath, "utf8");
+  for (const snippet of ["buildAgentEnvironment", "requiresIsolatedWorkspace(agentName)"]) {
+    assert(shellService.includes(snippet), `Phase 16 agent environment isolation is missing: ${snippet}`);
   }
   const phase16Cli = fs.readFileSync(phase16CliPath, "utf8");
   for (const command of [

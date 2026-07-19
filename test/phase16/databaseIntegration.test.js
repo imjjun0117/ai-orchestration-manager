@@ -936,6 +936,30 @@ if (!enabled) {
       "TASK_PROCESS_KILLED",
     ]);
 
+    const pauseFailureId = "TASK-PHASE16-PAUSE-FAILURE";
+    await createTask(pauseFailureId, "CODING");
+    await pool.query(
+      `UPDATE tasks SET current_pid = 4444, current_host_id = $2, current_owner_instance_id = 'builder-3'
+       WHERE id = $1`,
+      [pauseFailureId, hostId]
+    );
+    await assert.rejects(
+      taskControlService.pauseTaskProcess({
+        taskId: pauseFailureId,
+        expectedVersion: 0,
+        ownerInstanceId: "builder-3",
+      }, {
+        db: pool,
+        processApi: {
+          pauseProcessTree() { throw new Error("simulated pause signal uncertainty"); },
+        },
+      }),
+      /simulated pause signal uncertainty/
+    );
+    const pauseFailure = await pool.query(`SELECT * FROM tasks WHERE id = $1`, [pauseFailureId]);
+    assert.equal(pauseFailure.rows[0].control_state, "NEEDS_RECONCILIATION");
+    assert.equal(pauseFailure.rows[0].status, "NEEDS_RECONCILIATION");
+
     const orphanId = "TASK-PHASE16-ORPHAN";
     await createTask(orphanId, "CODING");
     await pool.query(
@@ -986,15 +1010,53 @@ if (!enabled) {
     );
     const candidates = await isolatedWorkspaceService.listReconciliationCandidates({ db: pool });
     assert.ok(candidates.some((candidateWorkspace) => candidateWorkspace.id === created.workspace.id));
-    const cleaned = await isolatedWorkspaceService.cleanupIsolatedWorkspace({
+    const stalePlan = await reconciliationService.getWorkspaceReconciliationPlan(
+      created.workspace.id,
+      { db: pool }
+    );
+    await pool.query(
+      `UPDATE workspace_leases SET fencing_token = fencing_token + 1 WHERE lease_id = $1`,
+      [created.lease.lease_id]
+    );
+    await assert.rejects(
+      reconciliationService.reconcileWorkspace({
+        isolatedWorkspaceId: created.workspace.id,
+        expectedStatus: stalePlan.expectedStatus,
+        expectedLeaseId: stalePlan.expectedLeaseId,
+        expectedLeaseOwnerInstanceId: stalePlan.expectedLeaseOwnerInstanceId,
+        expectedLeaseOwnerOperationId: stalePlan.expectedLeaseOwnerOperationId,
+        expectedFencingToken: stalePlan.expectedFencingToken,
+        actorId: "watchdog",
+        incidentEvidence: { incidentId: "INC-STALE-PLAN", rationale: "stale plan must not delete" },
+        apply: true,
+      }, { db: pool, isolationRoot }),
+      /fencing token snapshot mismatch/
+    );
+    assert.equal(fs.existsSync(created.workspace.workspace_path), true);
+    const plan = await reconciliationService.getWorkspaceReconciliationPlan(
+      created.workspace.id,
+      { db: pool }
+    );
+    const reconciledWorkspace = await reconciliationService.reconcileWorkspace({
       isolatedWorkspaceId: created.workspace.id,
-      ownerInstanceId: "watchdog",
-      ownerOperationId: "watchdog-cleanup",
-      force: true,
+      expectedStatus: plan.expectedStatus,
+      expectedLeaseId: plan.expectedLeaseId,
+      expectedLeaseOwnerInstanceId: plan.expectedLeaseOwnerInstanceId,
+      expectedLeaseOwnerOperationId: plan.expectedLeaseOwnerOperationId,
+      expectedFencingToken: plan.expectedFencingToken,
+      actorId: "watchdog",
+      incidentEvidence: { incidentId: "INC-CLEANUP", rationale: "expired owner workspace cleanup" },
+      apply: true,
     }, { db: pool, isolationRoot });
-    assert.equal(cleaned.status, "CLEANED");
+    assert.equal(reconciledWorkspace.result.status, "CLEANED");
     assert.equal(fs.existsSync(created.workspace.workspace_path), false);
     assert.equal(git(canonical, "rev-parse", "HEAD"), base);
+    const cleanupEvidence = await pool.query(
+      `SELECT metadata_json->'reconciliationEvidence' AS evidence
+       FROM isolated_workspaces WHERE id = $1`,
+      [created.workspace.id]
+    );
+    assert.equal(cleanupEvidence.rows[0].evidence.incidentId, "INC-CLEANUP");
   });
 
   test("Phase 16 objects are not granted to PUBLIC", async () => {

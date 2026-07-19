@@ -4,7 +4,11 @@ const { spawn } = require("child_process");
 const pathGuard = require("../src/core/pathGuard");
 const commandGuard = require("../src/core/commandGuard");
 const hostIdentity = require("../src/core/hostIdentity");
-const { assertRegisteredAgentWorkspace } = require("../src/workspace/workspaceExecutionPolicy");
+const {
+  assertRegisteredAgentWorkspace,
+  requiresIsolatedWorkspace,
+} = require("../src/workspace/workspaceExecutionPolicy");
+const { sanitizedEnvironment } = require("../src/workspace/sandboxService");
 const db = require("../src/db");
 const logger = require("./logger");
 
@@ -15,6 +19,14 @@ const envWithPaths = {
     .filter(Boolean)
     .join(path.delimiter),
 };
+
+function buildAgentEnvironment(source = envWithPaths) {
+  const result = sanitizedEnvironment(source);
+  for (const key of ["HOME", "CODEX_HOME"]) {
+    if (source[key] !== undefined) result[key] = String(source[key]);
+  }
+  return result;
+}
 
 const DEFAULT_TIMEOUT_MS = 30 * 60 * 1000;
 const DEFAULT_KILL_GRACE_MS = 5000;
@@ -197,7 +209,7 @@ async function runCommand(command, args = [], options = {}) {
       detached,
       shell: false,
       stdio: ["ignore", "pipe", "pipe"],
-      env: envWithPaths,
+      env: requiresIsolatedWorkspace(agentName) ? buildAgentEnvironment(envWithPaths) : envWithPaths,
     });
     const childPid = child.pid || null;
     const childPgid = detached && childPid && process.platform !== "win32" ? childPid : null;
@@ -361,6 +373,7 @@ function extractErrorMessage(error) {
 }
 
 module.exports = {
+  buildAgentEnvironment,
   runCommand,
   extractErrorMessage,
   _internal: {

@@ -11,7 +11,16 @@ const { assertIsolatedWriteEnabled, assertPhase16WriteEnabled } = require("../..
 const { assertTargetRef } = require("../../src/workspace/finalizerService");
 const { assertManagedWorkspacePath, ensureIsolationRoot } = require("../../src/workspace/isolatedWorkspaceService");
 const processService = require("../../src/core/processService");
-const { buildContainerInvocation, sanitizedEnvironment, validateContainerImage } = require("../../src/workspace/sandboxService");
+const {
+  buildContainerInvocation,
+  runRegisteredNativeAgent,
+  runSandboxed,
+  sanitizedEnvironment,
+  validateContainerImage,
+} = require("../../src/workspace/sandboxService");
+const { buildAgentEnvironment } = require("../../services/shell");
+const taskControlService = require("../../src/workspace/taskControlService");
+const { buildCodexArgs } = require("../../agents/codex");
 const { assertAgentWorkspace, assertRegisteredAgentWorkspace } = require("../../src/workspace/workspaceExecutionPolicy");
 const { formatBoundApproval } = require("../../src/workspace/approvalDisplay");
 const { assertArtifactScope, globPattern } = require("../../src/workspace/taskWorkspaceWorkflowService");
@@ -149,12 +158,122 @@ test("container policy mounts only the isolated workspace and strips credentials
     sanitizedEnvironment({ PATH: "/bin", DATABASE_URL: "secret", CHANNEL_TOKEN_MASTER_KEY: "secret" }),
     { PATH: "/bin", CI: "true", NO_COLOR: "1" }
   );
+  assert.deepEqual(
+    buildAgentEnvironment({
+      PATH: "/bin",
+      HOME: "/safe-home",
+      CODEX_HOME: "/safe-codex",
+      DATABASE_URL: "secret",
+      DISCORD_TOKEN: "secret",
+    }),
+    { PATH: "/bin", CI: "true", NO_COLOR: "1", HOME: "/safe-home", CODEX_HOME: "/safe-codex" }
+  );
   assert.throws(() => validateContainerImage("node:latest"), /non-latest/);
   assert.throws(() => validateContainerImage("node"), /explicit non-latest/);
   assert.throws(
     () => buildContainerInvocation({ workspacePath: workspace, cwd: os.tmpdir(), command: "true", image: "node:24" }),
     /escapes/
   );
+});
+
+test("production native and container runners require the registered isolated task workspace", async () => {
+  const canonical = temporaryDirectory("phase16-runtime-canonical-");
+  const isolationRoot = temporaryDirectory("phase16-runtime-isolation-");
+  const workspace = path.join(isolationRoot, "task", "repository");
+  fs.mkdirSync(workspace, { recursive: true });
+  const env = {
+    ISOLATED_WORKSPACE_MODE: "true",
+    CODER_WRITE_ENABLED: "true",
+    ISOLATED_SANDBOX_BACKEND: "container",
+    ISOLATED_WORKSPACE_ROOT: isolationRoot,
+  };
+  const db = {
+    query: async (sql, params) => {
+      if (sql.includes("delivery_phases")) return { rows: [{ id: "phase-16", status: "ACCEPTED" }] };
+      if (params[0] === "TASK-RUNTIME" && params[1] === fs.realpathSync(workspace)) {
+        return { rows: [{ id: "iw-runtime", workspace_id: "workspace-runtime", fencing_token: 9 }] };
+      }
+      return { rows: [] };
+    },
+  };
+  await assert.rejects(
+    runSandboxed({
+      taskId: "TASK-RUNTIME",
+      workspacePath: canonical,
+      command: "true",
+      backend: "container",
+      image: "node:24.14.0-alpine",
+    }, { db, env, runner: async () => ({ stdout: "", stderr: "" }) }),
+    /task-isolated workspace/
+  );
+  await assert.rejects(
+    runSandboxed({
+      taskId: "TASK-RUNTIME",
+      agentName: "reviewer",
+      workspacePath: canonical,
+      command: "true",
+      backend: "container",
+      image: "node:24.14.0-alpine",
+    }, { db, env, runner: async () => ({ stdout: "", stderr: "" }) }),
+    /write-capable agent identity/
+  );
+  const container = await runSandboxed({
+    taskId: "TASK-RUNTIME",
+    workspacePath: workspace,
+    command: "true",
+    backend: "container",
+    image: "node:24.14.0-alpine",
+  }, { db, env, runner: async () => ({ stdout: "container-ok", stderr: "" }) });
+  assert.equal(container.stdout, "container-ok");
+  assert.equal(container.policy.isolatedWorkspaceId, "iw-runtime");
+  const native = await runRegisteredNativeAgent({
+    taskId: "TASK-RUNTIME",
+    workspacePath: workspace,
+    agentName: "codex",
+  }, {
+    db,
+    env,
+    runner: async ({ cwd, registration }) => `${cwd}:${registration.id}`,
+  });
+  assert.equal(native.result, `${fs.realpathSync(workspace)}:iw-runtime`);
+  assert.equal(native.policy.network, "DENY");
+  const codexArgs = buildCodexArgs("approved task context");
+  assert.deepEqual(codexArgs.slice(0, 6), [
+    "--ask-for-approval", "never", "exec", "--sandbox", "workspace-write", "--skip-git-repo-check",
+  ]);
+  assert.equal(codexArgs.at(-1), "approved task context");
+});
+
+test("pause never signals before the task compare-and-set succeeds", async () => {
+  const calls = [];
+  const task = {
+    id: "TASK-PAUSE-ORDER",
+    row_version: 4,
+    current_pid: 4242,
+    current_pgid: 4242,
+    current_host_id: null,
+    current_owner_instance_id: "worker",
+  };
+  const db = {
+    async query(sql) {
+      if (sql.includes("SELECT * FROM tasks")) return { rows: [task] };
+      throw new Error("simulated compare-and-set database failure");
+    },
+  };
+  await assert.rejects(
+    taskControlService.pauseTaskProcess({
+      taskId: task.id,
+      expectedVersion: 4,
+      ownerInstanceId: "worker",
+    }, {
+      db,
+      processApi: {
+        pauseProcessTree() { calls.push("pause"); return {}; },
+      },
+    }),
+    /simulated compare-and-set/
+  );
+  assert.deepEqual(calls, []);
 });
 
 test("candidate artifact binds base, candidate, context, binary diff, and changed files", () => {

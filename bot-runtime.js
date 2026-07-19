@@ -38,6 +38,7 @@ const channelCredentialService = require("./src/channels/channelCredentialServic
 const appDb = require("./src/db");
 const { formatBoundApproval } = require("./src/workspace/approvalDisplay");
 const taskControlService = require("./src/workspace/taskControlService");
+const sandboxService = require("./src/workspace/sandboxService");
 const workspaceWorkflowService = require("./src/workspace/taskWorkspaceWorkflowService");
 const { assertPhase16WriteEnabled, coderWriteEnabled, isolatedWorkspaceMode } = require("./src/workspace/featureFlags");
 
@@ -128,6 +129,21 @@ function phase16CanonicalRepository() {
     throw new Error("PHASE16_CANONICAL_BARE_REPOSITORY must point to the prepared bare canonical repository");
   }
   return path.resolve(configured);
+}
+
+function phase16QaCommand() {
+  const command = String(process.env.PHASE16_QA_COMMAND || "npm").trim();
+  if (!command) throw new Error("PHASE16_QA_COMMAND is required");
+  let args;
+  try {
+    args = JSON.parse(process.env.PHASE16_QA_ARGS_JSON || '["test"]');
+  } catch (error) {
+    throw new Error(`PHASE16_QA_ARGS_JSON must be a JSON array: ${error.message}`);
+  }
+  if (!Array.isArray(args) || args.some((value) => typeof value !== "string")) {
+    throw new Error("PHASE16_QA_ARGS_JSON must contain only string arguments");
+  }
+  return { command, args };
 }
 
 async function canonicalTargetSha(repositoryRoot, targetRef = "refs/heads/main") {
@@ -967,10 +983,23 @@ channelAdapter.onMessage(async (message) => {
             },
             shadowMode: false,
           }, {
-            runCoder: async ({ cwd }) => askCodex(
-              await contextBuilder.buildCoderContext(task, { instruction, cwd }),
-              { cwd, taskId: task.id }
-            ),
+            runCoder: async ({ cwd }) => {
+              const nativeExecution = await sandboxService.runRegisteredNativeAgent({
+                taskId: task.id,
+                workspacePath: cwd,
+                cwd,
+                agentName: "codex",
+                networkAllowed: false,
+              }, {
+                db: appDb,
+                env: process.env,
+                runner: async ({ cwd: registeredCwd }) => askCodex(
+                  await contextBuilder.buildCoderContext(task, { instruction, cwd: registeredCwd }),
+                  { cwd: registeredCwd, taskId: task.id }
+                ),
+              });
+              return nativeExecution.result;
+            },
           });
           await agentResultService.saveResult({
             taskId: task.id,
@@ -978,6 +1007,26 @@ channelAdapter.onMessage(async (message) => {
             resultType: "code_diff",
             content: stage.result,
             modelName: "codex",
+          });
+          const qaCommand = phase16QaCommand();
+          await progress.edit(`🧪 **${taskId}** 격리 container에서 QA를 실행하고 있습니다...`);
+          const qaResult = await sandboxService.runSandboxed({
+            taskId: task.id,
+            agentName: "qa",
+            workspacePath: stage.workspace.workspace_path,
+            cwd: stage.workspace.workspace_path,
+            command: qaCommand.command,
+            args: qaCommand.args,
+            backend: "container",
+            image: process.env.SANDBOX_CONTAINER_IMAGE,
+            networkAllowed: false,
+          }, { db: appDb, env: process.env });
+          await agentResultService.saveResult({
+            taskId: task.id,
+            agentName: "qa",
+            resultType: "qa_result",
+            content: qaResult.stdout || "QA completed without stdout",
+            modelName: "container",
           });
           const approvalTask = await workspaceWorkflowService.transitionTaskState({
             taskId: task.id,

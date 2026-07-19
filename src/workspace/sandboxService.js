@@ -4,6 +4,7 @@ const { execFile } = require("child_process");
 const { promisify } = require("util");
 const defaultDb = require("../db");
 const { assertPhase16WriteEnabled } = require("./featureFlags");
+const { assertRegisteredAgentWorkspace } = require("./workspaceExecutionPolicy");
 
 const execFileAsync = promisify(execFile);
 const DEFAULT_TIMEOUT_MS = 10 * 60 * 1000;
@@ -135,6 +136,18 @@ async function runSandboxed(
   } = {}
 ) {
   await assertPhase16WriteEnabled({ db, env });
+  const taskId = String(options.taskId || "").trim();
+  const agentName = String(options.agentName || "qa").trim().toLowerCase();
+  if (!taskId) throw new Error("container sandbox requires a taskId");
+  if (!["coder", "codex", "qa"].includes(agentName)) {
+    throw new Error("container sandbox requires a write-capable agent identity");
+  }
+  const registration = await assertRegisteredAgentWorkspace({
+    agentName,
+    taskId,
+    cwd: options.workspacePath,
+    env,
+  }, { db });
   const backend = String(options.backend || env.ISOLATED_SANDBOX_BACKEND || "").trim().toLowerCase();
   if (backend !== "container") {
     throw new Error("untrusted execution requires ISOLATED_SANDBOX_BACKEND=container; fallback execution is forbidden");
@@ -154,7 +167,57 @@ async function runSandboxed(
   return {
     stdout: String(result.stdout || ""),
     stderr: String(result.stderr || ""),
-    policy: invocation.policy,
+    policy: {
+      ...invocation.policy,
+      taskId,
+      isolatedWorkspaceId: registration.registration.id,
+      fencingToken: Number(registration.registration.fencing_token),
+    },
+  };
+}
+
+async function runRegisteredNativeAgent(
+  {
+    taskId,
+    workspacePath,
+    cwd = workspacePath,
+    agentName = "codex",
+    networkAllowed = false,
+  },
+  {
+    db = defaultDb,
+    env = process.env,
+    runner,
+  } = {}
+) {
+  if (typeof runner !== "function") throw new Error("native agent sandbox requires a runner callback");
+  if (networkAllowed) throw new Error("native agent sandbox network access is not permitted");
+  if (!["coder", "codex"].includes(String(agentName || "").trim().toLowerCase())) {
+    throw new Error("native agent sandbox is restricted to the Coder launcher");
+  }
+  const { realWorkspace, realCwd } = assertWorkspaceCwd(workspacePath, cwd);
+  const registration = await assertRegisteredAgentWorkspace({
+    agentName,
+    taskId,
+    cwd: realWorkspace,
+    env,
+  }, { db });
+  const result = await runner({
+    taskId,
+    cwd: realCwd,
+    registration: registration.registration,
+  });
+  return {
+    result,
+    policy: {
+      backend: "codex-native-workspace-write",
+      canonicalRepositoryMounted: false,
+      network: "DENY",
+      workspaceAccess: "READ_WRITE",
+      taskId,
+      isolatedWorkspaceId: registration.registration.id,
+      fencingToken: Number(registration.registration.fencing_token),
+    },
   };
 }
 
@@ -164,6 +227,7 @@ module.exports = {
   SAFE_ENV_KEYS,
   assertWorkspaceCwd,
   buildContainerInvocation,
+  runRegisteredNativeAgent,
   runSandboxed,
   sanitizedEnvironment,
   validateContainerUser,

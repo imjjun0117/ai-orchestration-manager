@@ -3,8 +3,8 @@
 | ID | 요구사항 | 구현 | 검증 |
 |---|---|---|---|
 | WS-001 | task별 clone, canonical remote 제거 | `isolatedWorkspaceService.js` | DB integration: orphaned isolated workspace |
-| WS-002 | canonical fallback 금지 | `workspaceExecutionPolicy.js`, `featureFlags.js`, `services/shell.js` | unit: Coder/QA fallback 거부 |
-| WS-003 | container sandbox path/network/resource 제한 | `sandboxService.js` | unit policy + actual Docker escape suite |
+| WS-002 | canonical fallback 금지 | `workspaceExecutionPolicy.js`, `featureFlags.js`, `services/shell.js`, production `!implement` | unit: Coder/QA fallback 및 미등록 경로 거부 |
+| WS-003 | native Coder와 container QA의 path/network/resource 경계 | `sandboxService.js`, `agents/codex.js`, sanitized agent environment | unit registered runner + actual Docker policy suite + production wiring |
 | WS-004 | 20-way shared lease | `acquire_workspace_lease` | DB integration: twenty readers |
 | WS-005 | exclusive 경쟁·fencing 증가 | lease procedures | DB integration: one winner, stale heartbeat |
 | WS-006 | generic operation owner | `workspace_leases.lease_owner_operation_id` | migration + lease integration tests |
@@ -16,15 +16,18 @@
 | WS-012 | competing finalization exactly one | unique claim + FINALIZE lease + task row serialization | DB integration: two claims one winner, task update/새 artifact race 차단 |
 | WS-013 | base ref CAS와 bare canonical | `finalizerService.js` | DB/Git integration: atomic `update-ref` |
 | WS-014 | stale finalizer 차단 | fencing checks in claim/complete | DB integration: released/stale fence 성공 완료 거부 |
-| WS-015 | pause/resume process group | `processService.js`, `taskControlService.js`, Discord `!end/!resume` | unit real PGID + DB state test + runtime wiring |
+| WS-015 | pause/resume process group, DB CAS 선행 | `processService.js`, `taskControlService.js`, Discord `!end/!resume` | unit DB failure signal 0회 + real PGID + DB signal-failure reconciliation |
 | WS-016 | cancel intent before kill | `killTaskProcess`, Discord `!kill` | DB integration checks state inside kill callback + runtime wiring |
-| WS-017 | orphan process/workspace/finalizer reconciliation | task/isolated/reconciliation services + CLI | DB integration, dry-run/apply CAS, incident evidence |
+| WS-017 | orphan process/workspace/finalizer reconciliation | task/isolated/reconciliation services + CLI | DB integration, status+lease owner/fence snapshot CAS, stale plan no-delete, incident evidence |
 | WS-018 | append-only audit | event trigger | DB integration + PUBLIC privilege checks |
 | WS-019 | migration rollback | core + additive rework down files, CLI guard | reverse-order down/reapply, legacy preservation |
 | WS-020 | Gate 전 write disabled | flags + DB `phase-16=ACCEPTED` assertion | unit false/accepted DB Gate; every write entry |
 | WS-021 | 사용자 approval 화면 | `approvalDisplay.js`, bound approval query, Discord/CLI | unit required fields + operational DB flow |
 | WS-022 | 실제 task lifecycle 연결 | `taskWorkspaceWorkflowService.js`, `!implement`, exact `!approve ID` | DB E2E: isolated→artifact→approval→finalizer→cleanup |
 | WS-023 | approval/hash 변경과 task claim 동시성 | `017_workspace_safety_rework` | disposable DB claim/artifact race + claimed task update rejection |
+| WS-024 | 실제 Developer가 등록 native sandbox 후 container QA를 통과해야 함 | `bot-runtime.js`, `sandboxService.js`, `services/shell.js` | unit dual registration + runtime source/readiness check |
+| WS-025 | host credential environment 비전달 | `buildAgentEnvironment`, container sanitized environment | unit DB/token/master-key 제거 검증 |
+| WS-026 | reconciliation apply의 stale plan 방지 | reconciliation plan lease snapshot + cleanup CAS | disposable DB fencing 변경 후 path 보존, fresh plan cleanup/evidence |
 
 검증 명령:
 

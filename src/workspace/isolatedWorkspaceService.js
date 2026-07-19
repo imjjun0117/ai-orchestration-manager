@@ -193,16 +193,57 @@ async function createCandidateArtifact(
 }
 
 async function cleanupIsolatedWorkspace(
-  { isolatedWorkspaceId, ownerInstanceId, ownerOperationId, force = false },
+  {
+    isolatedWorkspaceId,
+    ownerInstanceId,
+    ownerOperationId,
+    force = false,
+    expectedStatus = null,
+    expectedLeaseId = null,
+    expectedLeaseOwnerInstanceId = null,
+    expectedLeaseOwnerOperationId = null,
+    expectedFencingToken = null,
+    reconciliationEvidence = null,
+  },
   { db = defaultDb, isolationRoot = process.env.ISOLATED_WORKSPACE_ROOT || DEFAULT_ISOLATED_ROOT } = {}
 ) {
+  if (force && (
+    !expectedStatus
+    || !expectedLeaseId
+    || !expectedLeaseOwnerInstanceId
+    || !expectedLeaseOwnerOperationId
+    || expectedFencingToken === null
+    || expectedFencingToken === undefined
+    || expectedFencingToken === ""
+    || !Number.isInteger(Number(expectedFencingToken))
+    || Number(expectedFencingToken) <= 0
+    || !reconciliationEvidence
+  )) {
+    throw new Error("forced cleanup requires expected status, lease owner/fencing snapshot, and reconciliation evidence");
+  }
   const transition = force
     ? await db.query(
-      `UPDATE isolated_workspaces
-       SET status = 'CLEANUP_PENDING', updated_at = CURRENT_TIMESTAMP
-       WHERE id = $1 AND status <> 'CLEANED'
-       RETURNING *`,
-      [isolatedWorkspaceId]
+      `UPDATE isolated_workspaces w
+       SET status = 'CLEANUP_PENDING', updated_at = CURRENT_TIMESTAMP,
+           metadata_json = w.metadata_json || jsonb_build_object('reconciliationEvidence', $7::jsonb)
+       FROM workspace_leases l
+       WHERE w.id = $1
+         AND w.status = $2
+         AND w.lease_id = $3
+         AND w.lease_id = l.lease_id
+         AND l.lease_owner_instance_id = $4
+         AND l.lease_owner_operation_id = $5
+         AND l.fencing_token = $6
+       RETURNING w.*`,
+      [
+        isolatedWorkspaceId,
+        expectedStatus,
+        expectedLeaseId,
+        expectedLeaseOwnerInstanceId,
+        expectedLeaseOwnerOperationId,
+        expectedFencingToken,
+        JSON.stringify(reconciliationEvidence),
+      ]
     )
     : await db.query(
       `UPDATE isolated_workspaces w
@@ -217,7 +258,11 @@ async function cleanupIsolatedWorkspace(
       [isolatedWorkspaceId, ownerInstanceId, ownerOperationId]
     );
   const workspace = transition.rows[0];
-  if (!workspace) throw new Error("isolated workspace does not exist");
+  if (!workspace) {
+    throw new Error(force
+      ? "isolated workspace cleanup compare-and-set failed"
+      : "isolated workspace does not exist or lease ownership changed");
+  }
   const leaseRows = await db.query(`SELECT * FROM workspace_leases WHERE lease_id = $1`, [workspace.lease_id]);
   const lease = leaseRows.rows[0];
   const repositoryPath = assertManagedWorkspacePath(workspace.workspace_path, isolationRoot);
@@ -238,20 +283,28 @@ async function cleanupIsolatedWorkspace(
     const cleaned = await db.query(
       `UPDATE isolated_workspaces
        SET status = 'CLEANED', cleaned_at = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP, cleanup_error = NULL
-       WHERE id = $1 RETURNING *`,
+       WHERE id = $1 AND status = 'CLEANUP_PENDING' RETURNING *`,
       [isolatedWorkspaceId]
     );
+    if (!cleaned.rows[0]) throw new Error("isolated workspace cleanup state changed during filesystem removal");
     await db.query(
-      `INSERT INTO workspace_safety_events(workspace_id, task_id, isolated_workspace_id, event_type, actor_id)
-       VALUES ($1, $2, $3, 'ISOLATED_WORKSPACE_CLEANED', $4)`,
-      [workspace.workspace_id, workspace.task_id, isolatedWorkspaceId, ownerInstanceId]
+      `INSERT INTO workspace_safety_events(
+         workspace_id, task_id, isolated_workspace_id, event_type, actor_id, event_payload
+       ) VALUES ($1, $2, $3, 'ISOLATED_WORKSPACE_CLEANED', $4, $5::jsonb)`,
+      [
+        workspace.workspace_id,
+        workspace.task_id,
+        isolatedWorkspaceId,
+        ownerInstanceId,
+        JSON.stringify(reconciliationEvidence ? { reconciliationEvidence } : {}),
+      ]
     );
     return cleaned.rows[0];
   } catch (error) {
     await db.query(
       `UPDATE isolated_workspaces
        SET status = 'NEEDS_RECONCILIATION', cleanup_error = $2, updated_at = CURRENT_TIMESTAMP
-       WHERE id = $1`,
+       WHERE id = $1 AND status = 'CLEANUP_PENDING'`,
       [isolatedWorkspaceId, error.message]
     );
     throw error;

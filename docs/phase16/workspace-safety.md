@@ -20,8 +20,9 @@ Gate 수락 후에만 아래 순서로 활성화한다.
 3. 사용할 container image를 로컬에 준비한다. 태그는 `latest`가 아닌 고정 버전 또는 digest여야 한다.
 4. `ISOLATED_WORKSPACE_ROOT`를 canonical repository 밖의 전용 디렉터리로 지정한다.
 5. `PHASE16_CANONICAL_BARE_REPOSITORY`를 백업된 bare canonical repository로 지정한다.
-6. `ISOLATED_SANDBOX_BACKEND=container`, `SANDBOX_CONTAINER_IMAGE=<고정 이미지>`를 설정한다.
-7. Phase 16 DB Gate가 `ACCEPTED`인지 재확인한 뒤 `ISOLATED_WORKSPACE_MODE=true`, `CODER_WRITE_ENABLED=true`를 설정한다.
+6. `ISOLATED_SANDBOX_BACKEND=container`, `SANDBOX_CONTAINER_IMAGE=<고정 이미지>`를 설정한다. 이 image에는 network 없이 실행 가능한 QA dependency가 포함되어야 한다.
+7. 필요하면 `PHASE16_QA_COMMAND`와 JSON 문자열 `PHASE16_QA_ARGS_JSON`을 지정한다. 기본값은 `npm`, `["test"]`이다.
+8. Phase 16 DB Gate가 `ACCEPTED`인지 재확인한 뒤 `ISOLATED_WORKSPACE_MODE=true`, `CODER_WRITE_ENABLED=true`를 설정한다.
 
 ## 구성 요소
 
@@ -42,9 +43,11 @@ Gate 수락 후에만 아래 순서로 활성화한다.
 - 격리 workspace는 canonical repository 밖에서 `git clone --no-local --no-hardlinks`로 생성한다.
 - base commit을 detached checkout하고 `origin`을 제거한다. 격리 작업에서 canonical repository로 push할 수 없다.
 - 경로 cleanup은 관리 root 아래의 실제 경로인지 재검사하고 symlink escape를 거부한다.
-- untrusted sandbox는 container backend만 허용한다. native fallback은 없다.
+- Developer의 Codex launcher는 등록된 task workspace와 유효한 write lease를 DB에서 확인한 뒤 Codex의 `workspace-write` native sandbox로 실행한다. launcher는 host의 DB URL, Discord token, channel master key 같은 환경변수를 제거한다. Codex control-plane 인증에 필요한 `HOME`/`CODEX_HOME`만 유지하고, agent가 실행하는 tool command의 임의 network 접근은 허용하지 않는다. 같은 등록 검사는 launcher와 shell 경계에서 각각 수행한다.
+- Developer 결과 이후의 QA/test는 container backend만 허용한다. QA container 실패 시 candidate/approval 단계로 진행하지 않으며 native test fallback은 없다.
 - container는 network none, read-only root filesystem, non-root uid/gid, dropped capabilities, no-new-privileges, PID/memory/CPU 제한으로 실행한다.
 - container에는 task workspace 하나만 read-write bind mount한다. canonical path와 host credential environment는 전달하지 않는다.
+- `sandbox-run`은 임의 path를 신뢰하지 않는다. `taskId`와 `workspacePath`가 DB의 활성 `isolated_workspaces` row 및 만료되지 않은 `WRITE_EXCLUSIVE` lease에 정확히 일치해야 mount한다.
 
 ## Candidate와 context 결합
 
@@ -100,11 +103,13 @@ Phase 16 write mode에서는 legacy canonical commit 경로가 거부된다. 실
 1. !pm task 작업 요청
 2. PM이 표시한 plan과 범위를 사람이 확인
 3. !dev implement TASK-ID [추가 instruction]
-4. Developer가 격리 clone에서 Codex 실행, candidate commit/artifact 생성
-5. !release approval TASK-ID
-6. commit/path/diff/risk/hash/expiry/finalizer/ref 확인
-7. !release approve APPROVAL-ID
-8. Release Manager가 exact candidate만 bare canonical ref에 CAS 반영하고 workspace cleanup
+4. Developer가 등록된 격리 clone에서 native Codex sandbox 실행
+5. 동일 등록 workspace를 QA container에서 검증
+6. QA 통과 후 candidate commit/artifact 생성
+7. !release approval TASK-ID
+8. commit/path/diff/risk/hash/expiry/finalizer/ref 확인
+9. !release approve APPROVAL-ID
+10. Release Manager가 exact candidate만 bare canonical ref에 CAS 반영하고 workspace cleanup
 ```
 
 반려는 `!release reject APPROVAL-ID`를 사용한다. 이 명령은 canonical Git을 되돌리지 않고 아직 반영되지 않은 candidate approval을 반려한 뒤 격리 workspace와 lease를 정리한다.
@@ -119,6 +124,7 @@ Phase 16 write mode에서는 legacy canonical commit 경로가 거부된다. 실
 - kill: 먼저 `CANCEL_REQUESTED`를 기록하고, `SIGTERM`, grace period, 필요 시 `SIGKILL` 순으로 process group을 종료
 - owner host/instance가 다르면 신호를 보내지 않는다.
 - 프로세스가 사라졌지만 side effect가 확정되지 않으면 watchdog이 task를 `NEEDS_RECONCILIATION`으로 전환하며 자동 재실행하지 않는다.
+- pause의 task CAS가 실패하거나 DB 오류가 발생하면 `SIGSTOP`을 호출하지 않는다. CAS 이후 signal 결과가 불확실하면 task를 `NEEDS_RECONCILIATION`으로 전환한다.
 
 ## 운영 명령
 
@@ -157,6 +163,20 @@ CLI에서 같은 lifecycle을 실행할 때 request 예시는 다음과 같다.
 ```
 
 `prepare` 출력의 workspace에서 승인된 실행을 마친 다음 candidate request를 사용한다.
+
+QA container request는 `prepare`가 등록한 동일 task/workspace만 허용한다.
+
+```json
+{
+  "taskId":"TASK-...",
+  "agentName":"qa",
+  "workspacePath":"/srv/ai-manager/isolated/TASK-.../repository",
+  "command":"npm",
+  "args":["test"],
+  "backend":"container",
+  "image":"registry.example/ai-manager-qa@sha256:<digest>"
+}
+```
 
 ```json
 {

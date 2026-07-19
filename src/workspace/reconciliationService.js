@@ -22,7 +22,11 @@ function readCanonicalRef(repositoryRoot, targetRef) {
 
 async function getWorkspaceReconciliationPlan(isolatedWorkspaceId, { db = defaultDb } = {}) {
   const { rows } = await db.query(
-    `SELECT w.*, l.released_at AS lease_released_at, l.expires_at AS lease_expires_at
+    `SELECT w.*, l.released_at AS lease_released_at, l.expires_at AS lease_expires_at,
+            l.lease_id AS reconciliation_lease_id,
+            l.lease_owner_instance_id AS reconciliation_lease_owner_instance_id,
+            l.lease_owner_operation_id AS reconciliation_lease_owner_operation_id,
+            l.fencing_token AS reconciliation_fencing_token
      FROM isolated_workspaces w
      LEFT JOIN workspace_leases l ON l.lease_id = w.lease_id
      WHERE w.id = $1`,
@@ -38,24 +42,54 @@ async function getWorkspaceReconciliationPlan(isolatedWorkspaceId, { db = defaul
     pathExists,
     action: pathExists ? "OWNER_AWARE_CLEANUP" : "MARK_MISSING_WORKSPACE_CLEANED",
     expectedStatus: workspace.status,
+    expectedLeaseId: workspace.reconciliation_lease_id,
+    expectedLeaseOwnerInstanceId: workspace.reconciliation_lease_owner_instance_id,
+    expectedLeaseOwnerOperationId: workspace.reconciliation_lease_owner_operation_id,
+    expectedFencingToken: Number(workspace.reconciliation_fencing_token),
     dryRun: true,
   };
 }
 
 async function reconcileWorkspace(
-  { isolatedWorkspaceId, expectedStatus, actorId, incidentEvidence, apply = false },
+  {
+    isolatedWorkspaceId,
+    expectedStatus,
+    expectedLeaseId,
+    expectedLeaseOwnerInstanceId,
+    expectedLeaseOwnerOperationId,
+    expectedFencingToken,
+    actorId,
+    incidentEvidence,
+    apply = false,
+  },
   { db = defaultDb, isolationRoot } = {}
 ) {
   const plan = await getWorkspaceReconciliationPlan(isolatedWorkspaceId, { db });
   if (!apply) return plan;
   const evidence = requiredIncidentEvidence(incidentEvidence);
   if (plan.currentStatus !== expectedStatus) throw new Error("workspace reconciliation compare-and-set failed");
+  for (const [label, supplied, observed] of [
+    ["lease ID", expectedLeaseId, plan.expectedLeaseId],
+    ["lease owner instance", expectedLeaseOwnerInstanceId, plan.expectedLeaseOwnerInstanceId],
+    ["lease owner operation", expectedLeaseOwnerOperationId, plan.expectedLeaseOwnerOperationId],
+    ["fencing token", Number(expectedFencingToken), Number(plan.expectedFencingToken)],
+  ]) {
+    if (supplied === undefined || supplied === null || supplied === "" || supplied !== observed) {
+      throw new Error(`workspace reconciliation ${label} snapshot mismatch`);
+    }
+  }
   if (plan.pathExists) {
     const cleaned = await isolatedWorkspaceService.cleanupIsolatedWorkspace({
       isolatedWorkspaceId,
       ownerInstanceId: actorId,
       ownerOperationId: `reconcile:${evidence.incidentId}`,
       force: true,
+      expectedStatus,
+      expectedLeaseId,
+      expectedLeaseOwnerInstanceId,
+      expectedLeaseOwnerOperationId,
+      expectedFencingToken,
+      reconciliationEvidence: evidence,
     }, { db, isolationRoot });
     return { ...plan, dryRun: false, result: cleaned };
   }
@@ -72,6 +106,20 @@ async function reconcileWorkspace(
     const workspace = locked.rows[0];
     if (!workspace || workspace.status !== expectedStatus) {
       throw new Error("workspace reconciliation compare-and-set failed");
+    }
+    const lease = await client.query(
+      `SELECT * FROM workspace_leases WHERE lease_id = $1 FOR UPDATE`,
+      [workspace.lease_id]
+    );
+    const leaseRow = lease.rows[0];
+    if (
+      !leaseRow
+      || leaseRow.lease_id !== expectedLeaseId
+      || leaseRow.lease_owner_instance_id !== expectedLeaseOwnerInstanceId
+      || leaseRow.lease_owner_operation_id !== expectedLeaseOwnerOperationId
+      || Number(leaseRow.fencing_token) !== Number(expectedFencingToken)
+    ) {
+      throw new Error("workspace reconciliation lease snapshot mismatch");
     }
     if (fs.existsSync(workspace.workspace_path)) {
       throw new Error("workspace path reappeared; rerun reconciliation planning");

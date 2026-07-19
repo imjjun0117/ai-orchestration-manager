@@ -2,6 +2,16 @@ const fs = require("fs");
 const path = require("path");
 const { runCommand, extractErrorMessage } = require("../services/shell");
 
+function buildCodexArgs(prompt) {
+  return [
+    "--ask-for-approval", "never",
+    "exec",
+    "--sandbox", "workspace-write",
+    "--skip-git-repo-check",
+    String(prompt),
+  ];
+}
+
 /**
  * Codex CLI를 비대화식 모드로 실행하여 응답을 받습니다.
  * @param {string} prompt 에이전트에게 보낼 프롬프트
@@ -26,13 +36,7 @@ async function askCodex(prompt, options = {}) {
   // 주의: commandGuard.getLauncherPromptArgIndex()가 "codex"의 프롬프트 위치를
   // args 배열의 "마지막 인자"로 가정한다. combinedPrompt는 반드시 args의 맨 끝에
   // 와야 하며, 뒤에 다른 인자를 추가하면 안 된다 (추가하려면 그쪽도 같이 맞춰야 한다).
-  const args = [
-    "--ask-for-approval", "never",
-    "exec",
-    "--sandbox", "workspace-write",
-    "--skip-git-repo-check",
-    combinedPrompt,
-  ];
+  const args = buildCodexArgs(combinedPrompt);
 
   try {
     const { stdout } = await runCommand("codex", args, { ...options, trusted: false, agentName: "codex" });
@@ -53,4 +57,5 @@ async function askCodex(prompt, options = {}) {
 
 module.exports = {
   askCodex,
+  buildCodexArgs,
 };

@@ -42,12 +42,18 @@ npm run phase16 -- reconcile-processes process-reconcile.json --apply
 4. artifact가 있으면 DB hash와 Git object를 재계산
 5. 보존이 필요하면 incident용 read-only archive를 만들고, 아니면 owner-aware cleanup 실행
 
+dry-run 출력의 `expectedStatus`, `expectedLeaseId`, `expectedLeaseOwnerInstanceId`, `expectedLeaseOwnerOperationId`, `expectedFencingToken`을 적용 request에 그대로 복사한다. 적용 시 서비스가 같은 snapshot을 DB에서 다시 잠그고 대조한다. 하나라도 달라지면 경로를 삭제하지 않고 새 dry-run을 요구한다.
+
 경로가 canonical repository 또는 isolation root 밖이면 자동 삭제하지 않고 security incident로 분류한다.
 
 ```json
 {
   "isolatedWorkspaceId":"iw-...",
   "expectedStatus":"NEEDS_RECONCILIATION",
+  "expectedLeaseId":"lease-...",
+  "expectedLeaseOwnerInstanceId":"worker",
+  "expectedLeaseOwnerOperationId":"workspace-operation-...",
+  "expectedFencingToken":12,
   "actorId":"gate-admin",
   "incidentEvidence":{"incidentId":"INC-2026-001","rationale":"owner process is gone and candidate was archived"},
   "apply":false
@@ -60,7 +66,7 @@ npm run phase16 -- reconcile-workspace workspace-reconcile.json
 npm run phase16 -- reconcile-workspace workspace-reconcile.json --apply
 ```
 
-path가 이미 없으면 DB row, lease release, append-only event가 한 transaction에서 정리된다. path가 있으면 configured isolation root를 다시 검증한 owner-aware cleanup만 실행한다.
+path가 이미 없으면 DB row, lease release, append-only event가 한 transaction에서 정리된다. path가 있으면 상태와 lease owner/fencing snapshot을 CAS로 선점하고 incident evidence를 row에 기록한 뒤 configured isolation root를 다시 검증한 cleanup만 실행한다. stale plan 또는 owner 변경은 filesystem 삭제 전에 거부된다.
 
 ## 4. Finalizer reconciliation
 
@@ -105,6 +111,8 @@ kill은 `CANCEL_REQUESTED` event가 process signal보다 먼저 존재해야 한
 - process가 살아 있으면 owner가 맞는지 확인 후 grace/hard kill을 다시 판단한다.
 - process가 죽고 workspace가 clean하면 `CANCELLED`로 종료할 수 있다.
 - workspace change 여부가 불명확하면 `NEEDS_RECONCILIATION`을 유지한다.
+
+pause도 DB CAS가 `SIGSTOP`보다 먼저다. CAS/DB 오류 시 signal이 없고, CAS 이후 signal 또는 event 기록 결과가 불확실하면 `TASK_PAUSE_REQUIRES_RECONCILIATION`과 task 상태를 확인한다.
 
 ## 6. 종료 조건
 

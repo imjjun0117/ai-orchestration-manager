@@ -38,6 +38,8 @@ if (!enabled) {
       "printf 'container-policy-pass\\n'",
     ].join("\n");
     const result = await runSandboxed({
+      taskId: "TASK-PHASE16-CONTAINER",
+      agentName: "qa",
       workspacePath: workspace,
       command: "sh",
       args: ["-c", probe],
@@ -48,11 +50,16 @@ if (!enabled) {
       cpus: 1,
       pidsLimit: 128,
     }, {
-      db: { query: async () => ({ rows: [{ id: "phase-16", status: "ACCEPTED" }] }) },
+      db: {
+        query: async (sql) => sql.includes("delivery_phases")
+          ? { rows: [{ id: "phase-16", status: "ACCEPTED" }] }
+          : { rows: [{ id: "iw-container", workspace_id: "workspace-container", fencing_token: 1 }] },
+      },
       env: {
         ISOLATED_WORKSPACE_MODE: "true",
         CODER_WRITE_ENABLED: "true",
         ISOLATED_SANDBOX_BACKEND: "container",
+        ISOLATED_WORKSPACE_ROOT: os.tmpdir(),
       },
     });
     assert.match(result.stdout, /container-policy-pass/);

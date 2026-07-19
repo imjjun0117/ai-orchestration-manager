@@ -34,7 +34,6 @@ async function pauseTaskProcess(
   const task = await getTaskForControl(taskId, { db });
   assertLocalProcessOwnership(task, ownerInstanceId);
   if (Number(task.row_version) !== Number(expectedVersion)) throw new Error("task version mismatch");
-  const signalResult = processApi.pauseProcessTree({ pid: task.current_pid, pgid: task.current_pgid });
   const { rows } = await db.query(
     `UPDATE tasks
      SET control_state = 'PAUSED', status = 'PAUSED', paused_from_status = status,
@@ -43,12 +42,30 @@ async function pauseTaskProcess(
      RETURNING *`,
     [taskId, expectedVersion]
   );
-  if (!rows[0]) {
-    processApi.resumeProcessTree({ pid: task.current_pid, pgid: task.current_pgid });
-    throw new Error("task pause compare-and-set failed");
+  if (!rows[0]) throw new Error("task pause compare-and-set failed");
+  const pausedVersion = Number(rows[0].row_version);
+  try {
+    const signalResult = processApi.pauseProcessTree({ pid: task.current_pid, pgid: task.current_pgid });
+    await appendControlEvent(db, rows[0], "TASK_PROCESS_PAUSED", actorId, signalResult);
+    return rows[0];
+  } catch (error) {
+    const reconciled = await db.query(
+      `UPDATE tasks
+       SET control_state = 'NEEDS_RECONCILIATION', status = 'NEEDS_RECONCILIATION',
+           row_version = row_version + 1, updated_at = CURRENT_TIMESTAMP
+       WHERE id = $1 AND row_version = $2 AND control_state = 'PAUSED'
+       RETURNING *`,
+      [taskId, pausedVersion]
+    ).catch(() => ({ rows: [] }));
+    if (reconciled.rows[0]) {
+      await appendControlEvent(db, reconciled.rows[0], "TASK_PAUSE_REQUIRES_RECONCILIATION", actorId, {
+        error: error.message,
+        pid: task.current_pid,
+        pgid: task.current_pgid,
+      }).catch(() => {});
+    }
+    throw error;
   }
-  await appendControlEvent(db, rows[0], "TASK_PROCESS_PAUSED", actorId, signalResult);
-  return rows[0];
 }
 
 async function resumeTaskProcess(
