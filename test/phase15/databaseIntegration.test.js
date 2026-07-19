@@ -190,8 +190,17 @@ if (!enabled) {
       await migrateDown("015_delivery_governance_rework", { pool, allowDestructive: true });
       await migrateDown("015_delivery_governance_security", { pool, allowDestructive: true });
       await migrateDown("015_delivery_governance", { pool, allowDestructive: true });
-      const { rows } = await pool.query("SELECT to_regclass('public.delivery_phases') AS table_name");
-      assert.equal(rows[0].table_name, null);
+      const { rows } = await pool.query(
+        `SELECT to_regclass('public.delivery_phases') AS delivery_table,
+                to_regclass('public.channel_credentials') AS channel_table`
+      );
+      assert.equal(rows[0].delivery_table, null);
+      assert.equal(rows[0].channel_table, null);
+      const ledger = await pool.query(
+        `SELECT id FROM schema_migrations
+         WHERE id LIKE '015_delivery_governance%' OR id = '016_channel_credentials'`
+      );
+      assert.deepEqual(ledger.rows, []);
       await pool.end();
     }
     if (adminPool) {
@@ -250,6 +259,57 @@ if (!enabled) {
     assert.equal(await credentialService.getToken({ channelType, botInstanceId }, { db: pool }), null);
     await credentialService.storeToken({ channelType, botInstanceId, token: "integration-token-v2" }, { db: pool });
     assert.equal(await credentialService.getToken({ channelType, botInstanceId }, { db: pool }), "integration-token-v2");
+  });
+
+  test("governance rollback can explicitly preserve channel credentials for the retained runtime", async () => {
+    const preserveName = `ai_manager_phase15_preserve_${process.pid}_${Date.now()}`.replace(/[^a-z0-9_]/g, "_");
+    const preserveUrl = new URL(baseConnectionString);
+    preserveUrl.pathname = `/${preserveName}`;
+    let preservePool;
+    try {
+      await adminPool.query(`CREATE DATABASE "${preserveName}"`);
+      preservePool = new Pool({ connectionString: preserveUrl.toString() });
+      for (const id of [
+        "015_delivery_governance",
+        "015_delivery_governance_security",
+        "015_delivery_governance_rework",
+        "015_delivery_governance_operations",
+        "016_channel_credentials",
+      ]) {
+        await migrateUp(id, { pool: preservePool });
+      }
+      await credentialService.storeToken(
+        { channelType: "discord", botInstanceId: "preserved-role", token: "preserved-test-token" },
+        { db: preservePool }
+      );
+      for (const id of [
+        "015_delivery_governance_operations",
+        "015_delivery_governance_rework",
+        "015_delivery_governance_security",
+        "015_delivery_governance",
+      ]) {
+        await migrateDown(id, { pool: preservePool, allowDestructive: true });
+      }
+      const boundary = await preservePool.query(
+        `SELECT to_regclass('public.delivery_phases') AS delivery_table,
+                to_regclass('public.channel_credentials') AS channel_table,
+                EXISTS(SELECT 1 FROM schema_migrations WHERE id = '016_channel_credentials') AS channel_applied`
+      );
+      assert.equal(boundary.rows[0].delivery_table, null);
+      assert.equal(boundary.rows[0].channel_table, "channel_credentials");
+      assert.equal(boundary.rows[0].channel_applied, true);
+      assert.equal(
+        await credentialService.getToken(
+          { channelType: "discord", botInstanceId: "preserved-role" },
+          { db: preservePool }
+        ),
+        "preserved-test-token"
+      );
+      await migrateDown("016_channel_credentials", { pool: preservePool, allowDestructive: true });
+    } finally {
+      if (preservePool) await preservePool.end();
+      await adminPool.query(`DROP DATABASE IF EXISTS "${preserveName}" WITH (FORCE)`);
+    }
   });
 
   test("database rejects self-validation assignments", async () => {

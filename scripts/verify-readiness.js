@@ -11,6 +11,7 @@ const phase15MigrationPath = path.join(repoRoot, "src/db/migrations/015_delivery
 const phase15SecurityMigrationPath = path.join(repoRoot, "src/db/migrations/015_delivery_governance_security.up.sql");
 const phase15ReworkMigrationPath = path.join(repoRoot, "src/db/migrations/015_delivery_governance_rework.up.sql");
 const phase15OperationsMigrationPath = path.join(repoRoot, "src/db/migrations/015_delivery_governance_operations.up.sql");
+const channelCredentialsMigrationPath = path.join(repoRoot, "src/db/migrations/016_channel_credentials.up.sql");
 const packagePath = path.join(repoRoot, "package.json");
 
 const REQUIRED_ENV_KEYS = [
@@ -89,6 +90,16 @@ const REQUIRED_DB_COLUMNS = {
   phase_dependency_activations: ["phase_id", "depends_on_phase_id", "activated_by_submission_id", "activated_by_actor_id"],
   phase_debts: ["id", "finding_id", "risk_owner_actor_id", "risk_accepted_by_actor_id", "risk_accepted_at"],
   phase_debt_approvals: ["debt_id", "validator_type", "successor_safe", "safety_rationale"],
+  channel_credentials: [
+    "id",
+    "channel_type",
+    "bot_instance_id",
+    "encrypted_token",
+    "nonce",
+    "auth_tag",
+    "key_version",
+    "status",
+  ],
 };
 
 function parseArgs(argv) {
@@ -276,7 +287,18 @@ function checkSchemaStatic() {
   assert(fs.existsSync(phase15OperationsMigrationPath), "Phase 15 operator migration is missing");
   const phase15OperationsMigration = fs.readFileSync(phase15OperationsMigrationPath, "utf8");
   assert(phase15OperationsMigration.includes("replace_phase_assignment"), "Phase 15 operator migration must provide atomic assignment replacement");
-  pass("schema and Phase 15 migration static checks");
+  assert(fs.existsSync(channelCredentialsMigrationPath), "channel credential migration is missing");
+  const channelCredentialsMigration = fs.readFileSync(channelCredentialsMigrationPath, "utf8");
+  for (const snippet of [
+    "CREATE TABLE IF NOT EXISTS channel_credentials",
+    "encrypted_token TEXT NOT NULL",
+    "nonce TEXT NOT NULL",
+    "auth_tag TEXT NOT NULL",
+    "REVOKE ALL ON channel_credentials FROM PUBLIC",
+  ]) {
+    assert(channelCredentialsMigration.includes(snippet), `channel credential migration is missing required snippet: ${snippet}`);
+  }
+  pass("schema and bundled Phase 15 migration static checks");
 }
 
 function checkDocs() {
@@ -360,6 +382,17 @@ async function checkLiveDatabase() {
       [requiredPhase15Functions]
     );
     assert(publicRoutineGrants.length === 0, `Phase 15 functions still executable by PUBLIC: ${publicRoutineGrants.map((row) => row.routine_name).join(", ")}`);
+    const { rows: publicTableGrants } = await db.query(
+      `SELECT table_name
+       FROM information_schema.table_privileges
+       WHERE table_schema = 'public'
+         AND grantee = 'PUBLIC'
+         AND (table_name LIKE 'delivery_%' OR table_name LIKE 'phase_%' OR table_name = 'channel_credentials')`
+    );
+    assert(
+      publicTableGrants.length === 0,
+      `bundled Phase 15 tables still accessible by PUBLIC: ${publicTableGrants.map((row) => row.table_name).join(", ")}`
+    );
 
     const { rows: roleRows } = await db.query(
       `SELECT role, agent_name FROM role_bindings WHERE role = ANY($1)`,

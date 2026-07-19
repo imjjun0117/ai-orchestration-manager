@@ -1,6 +1,6 @@
 # Phase 15 Delivery Governance Bootstrap
 
-Phase 15 adds the delivery control plane used to implement and accept Phase 16 onward. It does not change the Discord runtime workflow or enable a code-writing path.
+Phase 15 adds the delivery control plane used to implement and accept Phase 16 onward. The final bundle also adds encrypted role-specific Discord credential storage and a single-terminal four-role launcher. It does not change the Discord command workflow or enable a new code-writing path.
 
 ## Safety boundary
 
@@ -25,14 +25,19 @@ The final schema is the result of:
 2. `015_delivery_governance_security`
 3. `015_delivery_governance_rework`
 4. `015_delivery_governance_operations`
+5. `016_channel_credentials`
 
-The last two migrations are additive corrections. They preserve the checksums of installations that already applied the original core and security migrations.
+The two `015` correction migrations are additive and preserve the checksums of installations that already applied the original core and security migrations. Migration `016` is the isolated encrypted channel-credential store.
 
 Rollback is destructive and is allowed only on an approved disposable or recoverable database:
 
 ```bash
-npm run phase15 -- rollback --confirm-phase15-rollback
+npm run phase15 -- rollback --confirm-phase15-rollback --preserve-channel-credentials
+# or, after an authorized recovery/export decision:
+npm run phase15 -- rollback --confirm-phase15-rollback --delete-channel-credentials
 ```
+
+Exactly one channel boundary must be selected. The preservation mode retains encrypted credentials and requires the DB-token-capable runtime; deletion mode removes the credential table and requires role-token re-enrollment. See `rollback-plan.md` before either command.
 
 ## Authoritative Git binding
 
@@ -147,6 +152,6 @@ npm run verify:db
 npm run verify:stress
 ```
 
-The DB suite uses a disposable database and authoritative temporary Git repository. It applies all forward migrations, exercises positive and negative Gate paths, reverses all migrations, verifies governance tables are removed, and drops the database.
+The DB suite uses disposable databases and an authoritative temporary Git repository. It applies all five forward migrations, exercises positive and negative Gate paths, verifies both the channel-preservation boundary and the full five-migration reverse chain, and drops every temporary database.
 
 Phase 15 remains unaccepted until real assigned validators independently approve and sign the final immutable submission. Test keys and test verdicts prove the mechanism only.

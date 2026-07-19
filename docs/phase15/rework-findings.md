@@ -15,5 +15,9 @@ This document maps the independent planning and development findings to worker c
 | Required negative Gate paths were missing | added hash mismatch, open finding, unassigned/cross-actor, dependency tests | disposable DB suite |
 | Operator lifecycle and status were incomplete | request-file CLI commands, cancellation, assignment replacement, expanded status/runbook | syntax, DB, and readiness verification |
 | Rework down migration could be misused as a standalone rollback | runbook declares the full reverse chain as the only supported rollback unit and explains the intermediate-state hazard | full-chain rollback verification |
+| Round 16 bundled channel migration/runtime had no coherent rollback boundary | rollback CLI requires an explicit preserve/delete credential decision; runbook defines retained-runtime and re-enrollment consequences | disposable preservation-boundary and five-migration full-down tests |
+| Four-role launcher could continue in a degraded partial state | per-role stream prefixes, exit audit, non-zero/signal fail-fast sibling shutdown | mocked child output and lifecycle regression |
+| Round 16 channel/launcher scope was absent from acceptance trace and evidence | requirements matrix and evidence now map enrollment, DB-only tokens, operations, labels, supervisor, and rollback | current pure/DB/readiness command results and independent revalidation |
+| Friendly role identity and unattended role typos were hard to diagnose | `--role` validates the fixed IDs before runtime; startup and `!instance` include friendly labels | launcher validation and runtime source assertions |
 
-Authoritative Git metadata is now available. Real actor assignment, signed independent verdicts for the final Git-bound hash, bootstrap import, and Gate replay remain external acceptance blockers that the worker cannot self-approve.
+Authoritative Git metadata is available. Real actor assignment, signed independent verdicts for the final Git-bound hash, bootstrap import, and Gate replay remain acceptance steps; the worker can assemble and import an independently signed package but cannot create validator approval on their behalf.

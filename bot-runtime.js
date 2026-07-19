@@ -48,6 +48,13 @@ function normalizeCommandPrefix(value) {
 const BOT_INSTANCE_ID = sanitizeInstanceId(process.env.BOT_INSTANCE_ID);
 const HOST_INSTANCE_ID = hostIdentity.getHostId();
 const COMMAND_PREFIX = normalizeCommandPrefix(process.env.COMMAND_PREFIX);
+const BOT_ROLE_LABELS = Object.freeze({
+  worker: "Developer",
+  "planning-validator": "PM",
+  "development-validator": "Code Reviewer",
+  "gate-admin": "Release Manager",
+});
+const BOT_ROLE_LABEL = process.env.BOT_ROLE_LABEL || BOT_ROLE_LABELS[BOT_INSTANCE_ID] || BOT_INSTANCE_ID;
 
 function normalizeIncomingContent(rawContent) {
   const trimmed = String(rawContent || "").trim();
@@ -797,7 +804,7 @@ channelAdapter.onReady(async () => {
   process.title = `ai-manager:${BOT_INSTANCE_ID}`;
   logger.info(
     `AI Manager Bot Online: ${client.user.tag} ` +
-    `(host=${HOST_INSTANCE_ID}, instance=${BOT_INSTANCE_ID}, prefix=${COMMAND_PREFIX}, env=${envFilePath}, workspace=${getWorkspaceDir()}, pid=${process.pid})`
+    `(role=${BOT_ROLE_LABEL}, host=${HOST_INSTANCE_ID}, instance=${BOT_INSTANCE_ID}, prefix=${COMMAND_PREFIX}, env=${envFilePath}, workspace=${getWorkspaceDir()}, pid=${process.pid})`
   );
 });
 
@@ -827,6 +834,7 @@ channelAdapter.onMessage(async (message) => {
     logger.info(`instance command received from ${message.author.tag}`);
     await message.reply(
       `🤖 **AI Manager Instance**\n` +
+      `- role: \`${BOT_ROLE_LABEL}\`\n` +
       `- instance: \`${BOT_INSTANCE_ID}\`\n` +
       `- host: \`${HOST_INSTANCE_ID}\`\n` +
       `- bot: \`${client.user.tag}\`\n` +

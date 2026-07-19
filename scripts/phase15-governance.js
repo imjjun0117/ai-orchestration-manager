@@ -20,18 +20,21 @@ const validationService = require("../src/delivery/phaseValidationService");
 const findingService = require("../src/delivery/phaseFindingService");
 const gateService = require("../src/delivery/phaseGateService");
 
-const MIGRATION_IDS = [
+const GOVERNANCE_MIGRATION_IDS = [
   "015_delivery_governance",
   "015_delivery_governance_security",
   "015_delivery_governance_rework",
   "015_delivery_governance_operations",
 ];
+const CHANNEL_CREDENTIAL_MIGRATION_ID = "016_channel_credentials";
+const BUNDLED_MIGRATION_IDS = [...GOVERNANCE_MIGRATION_IDS, CHANNEL_CREDENTIAL_MIGRATION_ID];
 
 function usage() {
   console.log([
     "Usage:",
     "  node scripts/phase15-governance.js migrate",
-    "  node scripts/phase15-governance.js rollback --confirm-phase15-rollback",
+    "  node scripts/phase15-governance.js rollback --confirm-phase15-rollback --preserve-channel-credentials",
+    "  node scripts/phase15-governance.js rollback --confirm-phase15-rollback --delete-channel-credentials",
     "  node scripts/phase15-governance.js hash <manifest.json>",
     "  node scripts/phase15-governance.js hash-draft <manifest.json>",
     "  node scripts/phase15-governance.js verify-bootstrap <bootstrap-package.json>",
@@ -69,7 +72,9 @@ function requireRequest(argument, command) {
 }
 
 async function main() {
-  const [command, argument, confirmation] = process.argv.slice(2);
+  const commandArgs = process.argv.slice(2);
+  const [command, argument] = commandArgs;
+  const flags = new Set(commandArgs.slice(1));
   if (!command || command === "--help" || command === "-h") {
     usage();
     return;
@@ -77,20 +82,32 @@ async function main() {
 
   if (command === "migrate") {
     const results = [];
-    for (const migrationId of MIGRATION_IDS) results.push(await migrateUp(migrationId));
+    for (const migrationId of BUNDLED_MIGRATION_IDS) results.push(await migrateUp(migrationId));
     console.log(JSON.stringify(results, null, 2));
     return;
   }
 
   if (command === "rollback") {
-    if (argument !== "--confirm-phase15-rollback" && confirmation !== "--confirm-phase15-rollback") {
+    if (!flags.has("--confirm-phase15-rollback")) {
       throw new Error("rollback requires --confirm-phase15-rollback");
     }
+    const preserveChannels = flags.has("--preserve-channel-credentials");
+    const deleteChannels = flags.has("--delete-channel-credentials");
+    if (preserveChannels === deleteChannels) {
+      throw new Error(
+        "rollback requires exactly one channel boundary: --preserve-channel-credentials or --delete-channel-credentials"
+      );
+    }
+    const rollbackIds = deleteChannels ? BUNDLED_MIGRATION_IDS : GOVERNANCE_MIGRATION_IDS;
     const results = [];
-    for (const migrationId of [...MIGRATION_IDS].reverse()) {
+    for (const migrationId of [...rollbackIds].reverse()) {
       results.push(await migrateDown(migrationId, { allowDestructive: true }));
     }
-    console.log(JSON.stringify(results, null, 2));
+    console.log(JSON.stringify({
+      channelCredentialBoundary: preserveChannels ? "PRESERVED" : "DELETED",
+      results,
+      retainedMigrations: preserveChannels ? [CHANNEL_CREDENTIAL_MIGRATION_ID] : [],
+    }, null, 2));
     return;
   }
 
@@ -126,7 +143,7 @@ async function main() {
 
   if (command === "import-bootstrap") {
     if (!argument) throw new Error("import-bootstrap requires a package JSON path");
-    for (const migrationId of MIGRATION_IDS) await migrateUp(migrationId);
+    for (const migrationId of BUNDLED_MIGRATION_IDS) await migrateUp(migrationId);
     const repositoryRoot = process.env.DELIVERY_AUTHORITATIVE_REPOSITORY || process.env.PHASE15_AUTHORITATIVE_REPOSITORY;
     if (!repositoryRoot) throw new Error("DELIVERY_AUTHORITATIVE_REPOSITORY is required for bootstrap import");
     const result = await importBootstrapPackage(readJson(argument), { repositoryRoot });

@@ -21,5 +21,11 @@
 | Cancellation UX | `cancel_delivery_phase`, CLI and event | audited cancellation test |
 | Assignment rotation UX | `replace_phase_assignment`, CLI and event | worker/validator rotation in self-approval regression test |
 | Bootstrap replay | signed package verification, authoritative Git binding, Phase 16 creation | import, self-hosted Gate, `BOOTSTRAP_ACCEPTED`, activation test |
-| Forward/backward migration | four ledger migrations and reverse runner | disposable up/down verification |
+| Encrypted role credential storage | `channel_credentials`, AES-256-GCM service, master key outside DB | encryption round-trip, invalid-key/tamper rejection, plaintext SQL-parameter check, PostgreSQL lifecycle test |
+| Four-role interactive enrollment | `node bot.js`, hidden TTY token input, ACTIVE preserve/replace and REVOKED recovery | non-TTY/EOF/Ctrl+C/master-key preflight probes; disposable DB four-role setup |
+| DB-only Discord token resolution | `bot-runtime.js` + `channelCredentialService.getToken` | source assertion excludes `process.env.DISCORD_TOKEN`; per-role runtime login probe |
+| Channel credential operations | `store-env`, `revoke`, scoped/global `rekey` | unit and PostgreSQL revoke→restore plus key-version re-encryption scenarios |
+| Friendly role identity | Developer, PM, Code Reviewer, Release Manager labels with fixed internal IDs | launcher selection/validation test; startup and `!instance` role-label assertions |
+| Single-terminal supervisor safety | role-prefixed stdout/stderr, exit audit, non-zero fail-fast sibling shutdown | mocked child lifecycle regression and PTY Ctrl+C shutdown probe |
+| Forward/backward migration | five ledger migrations and explicit preserve/delete channel boundary | disposable full up/down plus governance-down credential-preservation verification |
 | Operational visibility | expanded `getPhaseStatus`, request-file CLI, runbook | dependency/status assertions and static readiness checks |

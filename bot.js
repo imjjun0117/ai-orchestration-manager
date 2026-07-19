@@ -28,7 +28,10 @@ const ROLE_PREFIXES = {
 
 function requestedRole(argv = process.argv.slice(2)) {
   const index = argv.indexOf("--role");
-  return index >= 0 ? argv[index + 1] : null;
+  if (index < 0) return null;
+  const role = argv[index + 1];
+  if (!ROLES.includes(role)) throw new Error(`Unsupported role: ${role || "missing"}`);
+  return role;
 }
 
 async function selectRole(ask) {
@@ -76,23 +79,57 @@ function launchRole(role) {
   });
 }
 
-function launchRoles(roles = ROLES, { spawnProcess = spawn } = {}) {
+function prefixStream(stream, output, prefix) {
+  let buffer = "";
+  stream.on("data", (chunk) => {
+    buffer += chunk.toString();
+    const lines = buffer.split(/\r?\n/);
+    buffer = lines.pop() || "";
+    for (const line of lines) {
+      if (line.length > 0) output.write(`${prefix} ${line}\n`);
+    }
+  });
+  stream.on("end", () => {
+    if (buffer.length > 0) output.write(`${prefix} ${buffer}\n`);
+  });
+}
+
+function launchRoles(
+  roles = ROLES,
+  { spawnProcess = spawn, stdout = process.stdout, stderr = process.stderr } = {}
+) {
   return new Promise((resolve, reject) => {
     const children = [];
     let remaining = roles.length;
     let finalCode = 0;
-    let failed = false;
+    let shuttingDown = false;
+    let settled = false;
     const cleanup = () => {
-      process.removeListener("SIGINT", stopAll);
-      process.removeListener("SIGTERM", stopAll);
+      process.removeListener("SIGINT", handleSignal);
+      process.removeListener("SIGTERM", handleSignal);
     };
-    const stopAll = () => {
+    const finish = () => {
+      if (settled || remaining !== 0) return;
+      settled = true;
+      cleanup();
+      resolve(finalCode);
+    };
+    const stopAll = (exitCode = 0) => {
+      if (!shuttingDown) shuttingDown = true;
+      if (exitCode !== 0 && finalCode === 0) finalCode = exitCode;
       for (const child of children) {
         if (!child.killed) child.kill("SIGTERM");
       }
     };
-    process.once("SIGINT", stopAll);
-    process.once("SIGTERM", stopAll);
+    const handleSignal = () => stopAll(0);
+    process.once("SIGINT", handleSignal);
+    process.once("SIGTERM", handleSignal);
+
+    if (roles.length === 0) {
+      cleanup();
+      resolve(0);
+      return;
+    }
 
     for (const role of roles) {
       const envName = `${role.toUpperCase().replace(/[^A-Z0-9]+/g, "_")}_COMMAND_PREFIX`;
@@ -100,26 +137,41 @@ function launchRoles(roles = ROLES, { spawnProcess = spawn } = {}) {
       const child = spawnProcess(process.execPath, [path.join(repoRoot, "bot-runtime.js"), "--role", role], {
         cwd: repoRoot,
         env: { ...process.env, BOT_INSTANCE_ID: role, COMMAND_PREFIX: commandPrefix },
-        stdio: "inherit",
+        stdio: ["ignore", "pipe", "pipe"],
       });
+      child.supervisorRole = role;
+      child.supervisorExited = false;
       children.push(child);
-      process.stdout.write(`[bot-supervisor] Started ${ROLE_LABELS[role]} prefix=${commandPrefix} pid=${child.pid}\n`);
+      const label = `[${ROLE_LABELS[role]}]`;
+      stdout.write(`[bot-supervisor] Started ${ROLE_LABELS[role]} prefix=${commandPrefix} pid=${child.pid}\n`);
+      if (child.stdout) prefixStream(child.stdout, stdout, label);
+      if (child.stderr) prefixStream(child.stderr, stderr, label);
       child.once("error", (error) => {
-        if (failed) return;
-        failed = true;
-        cleanup();
-        stopAll();
-        reject(error);
+        if (child.supervisorExited) return;
+        child.supervisorExited = true;
+        remaining -= 1;
+        stderr.write(`[bot-supervisor] ${ROLE_LABELS[role]} failed to start: ${error.message}\n`);
+        stopAll(1);
+        if (remaining === 0 && !settled) {
+          settled = true;
+          cleanup();
+          reject(error);
+        }
       });
       child.once("exit", (code, signal) => {
-        if (failed) return;
-        if (code && finalCode === 0) finalCode = code;
-        if (signal && !["SIGINT", "SIGTERM"].includes(signal) && finalCode === 0) finalCode = 1;
+        if (child.supervisorExited) return;
+        child.supervisorExited = true;
         remaining -= 1;
-        if (remaining === 0) {
-          cleanup();
-          resolve(finalCode);
+        const exitLabel = signal ? `signal=${signal}` : `code=${code}`;
+        stderr.write(`[bot-supervisor] ${ROLE_LABELS[role]} exited ${exitLabel}\n`);
+        if (!shuttingDown && (signal || code !== 0)) {
+          const exitCode = Number.isInteger(code) && code !== 0 ? code : 1;
+          stderr.write(
+            `[bot-supervisor] DEGRADED: ${ROLE_LABELS[role]} stopped; terminating the remaining roles\n`
+          );
+          stopAll(exitCode);
         }
+        finish();
       });
     }
   });
@@ -171,6 +223,7 @@ async function main() {
   const role = requestedRole();
   if (role) {
     process.env.BOT_INSTANCE_ID = role;
+    process.env.BOT_ROLE_LABEL = ROLE_LABELS[role];
     require("./bot-runtime");
     return 0;
   }
@@ -199,6 +252,7 @@ module.exports = {
   launchRole,
   launchRoles,
   main,
+  prefixStream,
   requestedRole,
   selectRole,
 };

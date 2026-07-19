@@ -54,6 +54,8 @@ For production, inject `CHANNEL_TOKEN_MASTER_KEY` from a secret manager and rest
 
 Running `node bot.js` in a terminal starts a guided launcher. It presents the user-facing roles `Developer`, `PM`, `Code Reviewer`, and `Release Manager`, mapped internally to `worker`, `planning-validator`, `development-validator`, and `gate-admin`. By default it configures all four sequentially in one session. It generates and stores a local master key in `.env` with mode `0600` when approved and missing, and then reuses or replaces each role's encrypted DB credential. Tokens are entered without terminal echo. After setup, one command can supervise all four role processes in the same terminal; one `Ctrl+C` stops the group.
 
+Supervisor output is attributed with `[Developer]`, `[PM]`, `[Code Reviewer]`, or `[Release Manager]` on every child log line. Every child exit is reported. A non-zero exit or unexpected signal marks the group `DEGRADED`, terminates the remaining roles, and returns a non-zero supervisor exit status; operators must correct the failed role and restart the complete group. This fail-fast policy prevents an unnoticed partial approval pipeline.
+
 The all-role launcher assigns distinct prefixes automatically: `!dev`, `!pm`, `!review`, and `!release`. Override an individual prefix with `WORKER_COMMAND_PREFIX`, `PLANNING_VALIDATOR_COMMAND_PREFIX`, `DEVELOPMENT_VALIDATOR_COMMAND_PREFIX`, or `GATE_ADMIN_COMMAND_PREFIX`.
 
 For direct or unattended startup, select the credential with `--role`; the role maps to `bot_instance_id`:
@@ -65,4 +67,6 @@ node bot.js --role development-validator
 node bot.js --role gate-admin
 ```
 
-Each role must have its own active credential when separate Discord applications are used. `--role` takes precedence over `BOT_INSTANCE_ID`; both paths resolve the encrypted DB credential only. `BOT_INSTANCE_ID` remains supported for unattended environments that do not pass `--role`.
+Each role must have its own active credential when separate Discord applications are used. `--role` accepts only the four documented internal IDs and rejects missing or misspelled values before runtime initialization. It takes precedence over `BOT_INSTANCE_ID`; both paths resolve the encrypted DB credential only. `BOT_INSTANCE_ID` remains supported for unattended environments that do not pass `--role`. Startup logs and `!instance` show both the friendly role label and internal ID.
+
+Phase 15 rollback requires an explicit decision to preserve or delete the channel credential schema. Follow `docs/phase15/rollback-plan.md`; deletion removes all encrypted credential rows and requires role-token re-enrollment.

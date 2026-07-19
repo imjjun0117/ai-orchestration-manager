@@ -211,6 +211,8 @@ test("bot launcher selects supported roles by number or name", async () => {
   await assert.rejects(selectRole(async () => "unknown"), /Unsupported role/);
   assert.equal(requestedRole(["--role", "worker"]), "worker");
   assert.equal(requestedRole([]), null);
+  assert.throws(() => requestedRole(["--role", "typo"]), /Unsupported role: typo/);
+  assert.throws(() => requestedRole(["--role"]), /Unsupported role: missing/);
 });
 
 test("bot launcher creates a protected local master key without exposing it", async () => {
@@ -248,6 +250,43 @@ test("bot supervisor launches role processes with distinct default prefixes", as
   assert.equal(calls[1].options.env.BOT_INSTANCE_ID, "planning-validator");
   assert.equal(calls[1].options.env.COMMAND_PREFIX, "!pm");
   assert.match(calls[0].args[0], /bot-runtime\.js$/);
+  assert.deepEqual(calls[0].options.stdio, ["ignore", "pipe", "pipe"]);
+});
+
+test("bot supervisor prefixes output and fails fast when one role exits non-zero", async () => {
+  const calls = [];
+  const stdoutChunks = [];
+  const stderrChunks = [];
+  const stdout = { write: (value) => stdoutChunks.push(String(value)) };
+  const stderr = { write: (value) => stderrChunks.push(String(value)) };
+  const fakeSpawn = (command, args, options) => {
+    const child = new EventEmitter();
+    child.stdout = new EventEmitter();
+    child.stderr = new EventEmitter();
+    child.pid = 2000 + calls.length;
+    child.killed = false;
+    child.kill = (signal) => {
+      if (child.killed) return false;
+      child.killed = true;
+      queueMicrotask(() => child.emit("exit", null, signal));
+      return true;
+    };
+    calls.push({ command, args, options, child });
+    return child;
+  };
+
+  const running = launchRoles(["worker", "planning-validator"], { spawnProcess: fakeSpawn, stdout, stderr });
+  calls[0].child.stdout.emit("data", "online\n");
+  calls[1].child.stderr.emit("data", "warning\n");
+  calls[0].child.emit("exit", 7, null);
+
+  assert.equal(await running, 7);
+  assert.equal(calls[1].child.killed, true);
+  assert.match(stdoutChunks.join(""), /\[Developer\] online/);
+  assert.match(stderrChunks.join(""), /\[PM\] warning/);
+  assert.match(stderrChunks.join(""), /Developer exited code=7/);
+  assert.match(stderrChunks.join(""), /DEGRADED: Developer stopped/);
+  assert.match(stderrChunks.join(""), /PM exited signal=SIGTERM/);
 });
 
 test("DiscordAdapter subscribes to clientReady without deprecated ready events", () => {
@@ -267,4 +306,14 @@ test("bot runtime resolves Discord credentials from the database only", () => {
   const source = fs.readFileSync(path.resolve(__dirname, "../../bot-runtime.js"), "utf8");
   assert.doesNotMatch(source, /process\.env\.DISCORD_TOKEN/);
   assert.match(source, /channelCredentialService\.getToken/);
+  assert.match(source, /BOT_ROLE_LABEL/);
+  assert.match(source, /`- role: \\`\$\{BOT_ROLE_LABEL\}\\`/);
+});
+
+test("Phase 15 operator rollback requires an explicit channel credential boundary", () => {
+  const source = fs.readFileSync(path.resolve(__dirname, "../../scripts/phase15-governance.js"), "utf8");
+  assert.match(source, /--preserve-channel-credentials/);
+  assert.match(source, /--delete-channel-credentials/);
+  assert.match(source, /preserveChannels === deleteChannels/);
+  assert.match(source, /BUNDLED_MIGRATION_IDS/);
 });

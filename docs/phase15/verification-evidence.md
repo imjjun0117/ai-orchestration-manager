@@ -1,6 +1,6 @@
 # Phase 15 Verification Evidence
 
-Date: 2026-07-18
+Date: 2026-07-19
 
 This is worker-generated execution evidence. It is not an independent validator verdict.
 
@@ -14,11 +14,11 @@ npm run test:phase15
 
 Result:
 
-- 15 passed
+- 29 passed
 - 0 failed
 - 1 PostgreSQL integration suite skipped unless explicitly enabled
 
-Coverage includes canonical JSON/hash, raw bytes and symlinks, traversal rejection, Git SHA validation, real Git object/ancestry verification, role policy, credential fingerprints, Ed25519 signature/tamper checks, and bootstrap blocker rejection.
+Coverage includes canonical JSON/hash, raw bytes and symlinks, traversal rejection, Git SHA validation, real Git object/ancestry verification, role policy, credential fingerprints, Ed25519 signature/tamper checks, and bootstrap blocker rejection. Channel coverage includes AES-256-GCM and master-key validation, hidden/TTY-only enrollment, ACTIVE preservation, role selection and early typo rejection, DB-only runtime token resolution, friendly runtime identity, explicit rollback boundary selection, and role-prefixed supervisor fail-fast behavior.
 
 ## Disposable PostgreSQL integration
 
@@ -28,7 +28,7 @@ Command:
 npm run test:phase15:db
 ```
 
-Result: 17 passed, 0 failed.
+Result: 19 passed, 0 failed.
 
 Verified scenarios:
 
@@ -47,8 +47,11 @@ Verified scenarios:
 13. Cancellation requires an authorized administrator and preserves its reason in the audit event.
 14. Non-security MAJOR debt requires risk-owner acceptance and two successor-safe validator approvals.
 15. A signed bootstrap package verifies real Git commits, imports, self-Gates, records `BOOTSTRAP_ACCEPTED`, and activates Phase 16 exactly once.
+16. Channel credentials revoke, restore to ACTIVE, and decrypt correctly against the disposable PostgreSQL table.
+17. Governance-only rollback explicitly preserves migration `016`, encrypted credential rows, and their decryptability when the DB-token-capable runtime is retained.
+18. Full reverse order removes `016` and all four `015` migrations, leaves neither bundled schema ledger entry nor bundled table, and preserves unrelated runtime tables.
 
-The suite created a temporary Git repository and PostgreSQL database, applied all four forward migrations, ran the scenarios, reversed all four migrations, verified governance tables were removed, and dropped the database and repository.
+The suite created a temporary Git repository and disposable PostgreSQL databases, applied all five forward migrations, ran the scenarios, verified the explicit channel-preservation boundary, reversed the full five-migration bundle, verified bundled tables and ledger rows were removed, and dropped every database and repository.
 
 ## Live project DB readiness
 
@@ -65,7 +68,8 @@ Results:
 - `015_delivery_governance_security`: already applied, checksum `b31614a1386c3f14c5698bcf9728307b0bac9edcef4427322c71a163bb09b3b3`
 - `015_delivery_governance_rework`: applied, checksum `13ebef15f2ed76d52f8b887ccc7b3e018dd9eb57146f980fc727ad10d0ed84db`
 - `015_delivery_governance_operations`: applied, checksum `23b76dc1f805b0bcc0d196dc17b1e923f8634fd7cb6fb29a17e4584cdfa2cead`
-- syntax, package, env examples, static migration/docs, live tables/columns/functions, and PUBLIC privilege checks passed
+- `016_channel_credentials`: applied; checksum verified by the migration ledger runner
+- syntax checks passed for 68 files; package, env examples, bundled migration/docs, live tables/columns/functions, and PUBLIC privilege checks passed
 
 ## Existing workspace-lock regression
 
@@ -79,6 +83,6 @@ Result: passed with six competing workers. Contention selected exactly one lock 
 
 ## Remaining acceptance boundary
 
-- The current workspace has no authoritative Git metadata, so a real final base/candidate commit pair cannot be emitted here.
+- The authoritative Git repository is available, and each sealed candidate binds a real base/candidate ancestry. Any rework requires a new candidate commit, sealed round, and canonical hash.
 - No real Phase 15 submission row or signed planning/development verdict has been imported.
-- The worker does not create approval verdicts. A new manifest/hash must be independently revalidated after authoritative Git placement.
+- The worker does not create approval verdicts. Independent validators must approve and sign the same final rework hash before Bootstrap import.
