@@ -2,10 +2,10 @@
 
 - Candidate manifest: `submission-candidate.sealed.json`
 - Pre-attestation draft: `submission-candidate.unsealed.json`
-- Candidate round: `16` (friendly operator-facing role labels)
-- Canonical bundle hash: `sha256:f117968ddf6e243e43e9275d4f4d857768889dc4513de9eb7b3ea567e3199d67`
+- Candidate round: `17` (Round 16 validation rework)
+- Canonical bundle hash: `sha256:c58a5de27d4ec5c30c35405963a4bed68cfbfe50cd994e9de400ba06c9d44769`
 - Base commit: `c45c66107e6740c73a490eab5b015f6afbf0d3a1`
-- Candidate commit: `fcd4df1ba3900dc9da7730d66e9d4477c49e526b`
+- Candidate commit: `7f67184d5eb5b375964403ca4c5145f9f4035b03`
 - Submitted by: `phase15-worker-codex-01`
 - State: `SEALED_PENDING_SIGNED_VALIDATION`
 - Database submission row: not created
@@ -13,7 +13,7 @@
 - Previous reviewed round-2 draft hash: `sha256:6b2df959796ab94d265cb88df0fc847969422c02487fc89bd420632d4c80c723` (stale; never reuse)
 - Previous reviewed round-1 draft hash: `sha256:e47dc7df23b7bf05c1d6445411945fd4f492ec015e572408b42d062325072955` (stale; never reuse)
 
-The worker resolved the planning/development implementation findings, removed the committed database credential, constrained the local database port, replaced the hardcoded home path, and added channel adapter and encrypted credential storage with reactivation/rekey controls. The manifest now covers those channel artifacts and binds the immutable candidate commit without self-reference. Prior draft hashes remain useful only as prevalidation evidence. Real assigned validator principals and signed verdicts for the canonical hash above do not exist yet.
+The worker resolved the Round 16 rollback, supervisor, traceability, and friendly-role findings. The bundled rollback now requires an explicit channel-credential preservation/deletion boundary; the four-role supervisor prefixes every child stream and fails fast on a degraded role; the trace/evidence reflects the current 29 pure and 19 DB integration passes. The manifest binds the immutable rework commit without self-reference. Prior hashes remain useful only as stale prevalidation evidence. Real assigned validator principals and signed verdicts for the canonical hash above do not exist yet.
 
 `submission-candidate-status.md` is derived mutable status and is deliberately outside the canonical bundle. The immutable inputs are the candidate manifest, included code/docs, requirements trace, rollback plan, known-issues snapshot, and verification evidence.
 

@@ -1,10 +1,10 @@
 {
   "schemaVersion": 1,
   "phaseId": "phase-15",
-  "submissionRound": 16,
+  "submissionRound": 17,
   "submittedBy": "phase15-worker-codex-01",
   "baseCommitSha": "c45c66107e6740c73a490eab5b015f6afbf0d3a1",
-  "candidateCommitSha": "fcd4df1ba3900dc9da7730d66e9d4477c49e526b",
+  "candidateCommitSha": "7f67184d5eb5b375964403ca4c5145f9f4035b03",
   "files": [
     {
       "path": "AI_Manager_Multi_Agent_Discord_Advanced_Spec_v1.1.md",
@@ -22,37 +22,37 @@
       "path": "docs/phase15/delivery-governance.md",
       "type": "file",
       "mode": "100644",
-      "sha256": "sha256:dd0cbb919c6e7f69736758ca6281e4c4ccf73d908c065a7bac080c28ac12edb1"
+      "sha256": "sha256:d4ad619af23d21926ca2261d1ec935109bfa35e78521391ee656c06ad726635a"
     },
     {
       "path": "docs/phase15/known-issues.md",
       "type": "file",
       "mode": "100644",
-      "sha256": "sha256:2cccd1c585863d6ccea896e81fb0eab225aa7f474a1c6ce7993320abb9f8cd58"
+      "sha256": "sha256:53facded4544f4e57709dfdb166a11833b1ec6f34692c8e15de1a771a4fef2fa"
     },
     {
       "path": "docs/phase15/requirements-trace.md",
       "type": "file",
       "mode": "100644",
-      "sha256": "sha256:41853353ae7029af8435fc7b31d2a5b77a4889c96806b8288290028f7e13c0c5"
+      "sha256": "sha256:6778270881e3e9a775a5248f435c4b08b6922e737585794b1e443b3cd13b9889"
     },
     {
       "path": "docs/phase15/rework-findings.md",
       "type": "file",
       "mode": "100644",
-      "sha256": "sha256:eb0a37d235c5e7abc5619352c223b4a33674d9f71dc870db899bbfd62c92bd59"
+      "sha256": "sha256:179fb6106a329be078d04f16e0a112577b503b912390240e9eaff88ab5dfce16"
     },
     {
       "path": "docs/phase15/rollback-plan.md",
       "type": "file",
       "mode": "100644",
-      "sha256": "sha256:08b30627269f3fcf8bea21d4e1a764f9cf148292e7ffb0f4f3f5685339b05265"
+      "sha256": "sha256:1e8b820fbf24e97111f13c3b4520a7f0602b555423d3465a31190ae2228e7f59"
     },
     {
       "path": "docs/phase15/verification-evidence.md",
       "type": "file",
       "mode": "100644",
-      "sha256": "sha256:af5a2136e958bfb9b3b2a6d2322b449d049e41b2fd54af749812f5abd6a1701a"
+      "sha256": "sha256:81bebd500156c545851b3caaf5e04bb56b71dcef713e4f0308a66ff181e14fa9"
     },
     {
       "path": "package.json",
@@ -64,13 +64,13 @@
       "path": "scripts/phase15-governance.js",
       "type": "file",
       "mode": "100644",
-      "sha256": "sha256:eefa8ab48304cf8c0722141b59d14c59708225f4efb0e2967517c2d3ce44a509"
+      "sha256": "sha256:c1ff7ec055358684f5db0df11b8fa8f48937fc634df8c2bef943245cfb5b1d0c"
     },
     {
       "path": "scripts/verify-readiness.js",
       "type": "file",
       "mode": "100644",
-      "sha256": "sha256:591b2fff62469631c48f256a04b2a6bd7910e9271149b7b1ac91358b2424df60"
+      "sha256": "sha256:3af20a8691bd303daf1a4af6e067a62f52f79a4847e5abe614a9a870e2cd2a0d"
     },
     {
       "path": "services/shell.js",
@@ -154,7 +154,7 @@
       "path": "test/phase15/databaseIntegration.test.js",
       "type": "file",
       "mode": "100644",
-      "sha256": "sha256:edc0b3fe2024298b0d70b21eda63e4399d2d99d98c850a0eaa67fd0cefb03d22"
+      "sha256": "sha256:090d755da3a7fd6d9cf49d9100e5dc6d44beac2f668a3db3a74d688f12521428"
     },
     {
       "path": "test/phase15/deliveryBootstrapService.test.js",
@@ -172,13 +172,13 @@
       "path": "bot.js",
       "type": "file",
       "mode": "100644",
-      "sha256": "sha256:39b7e95a4a0d96968487e3fab157b5fa59de6adef44c394be4a5258c0a59283c"
+      "sha256": "sha256:2b1bdf8363e82a60d5ffc707cbb548a7973194264b30291b408ca3b14a3023bc"
     },
     {
       "path": "bot-runtime.js",
       "type": "file",
       "mode": "100644",
-      "sha256": "sha256:3e572c0b56f61416001144da3ff2cbc7edfc1f9a6b14e99f88a02be7fa589b49"
+      "sha256": "sha256:f08d0756efbb1af567f4c1827260a105296b3b9a67d1f5de0f30d2624870a17c"
     },
     {
       "path": ".env.bot-a.example",
@@ -196,7 +196,7 @@
       "path": "docs/channel-adapters.md",
       "type": "file",
       "mode": "100644",
-      "sha256": "sha256:c3e5528fbe8a3490a2467b467498d0687973dc5ed285f2f04fdf94ec971e0e1d"
+      "sha256": "sha256:ccdde1ef60fb4342c0c35ddcd4d7adf6868b047eb1fc3e47ace9ac7b7337df1d"
     },
     {
       "path": "scripts/channel-credentials.js",
@@ -238,7 +238,7 @@
       "path": "test/phase15/channelCredentialService.test.js",
       "type": "file",
       "mode": "100644",
-      "sha256": "sha256:2e2b2d8ea8306024b96d98958dc5fb3d80825d13dc5cd461ae8cf8f61d7d3343"
+      "sha256": "sha256:f42f087a9dd958bcff25b3808ab029df3f5b7e79babeb4704f36a4ac838d6728"
     }
   ],
   "migrationArtifacts": [
@@ -305,11 +305,11 @@
   ],
   "testEvidence": [
     {
-      "id": "phase15-rework-verification-evidence",
-      "sha256": "sha256:af5a2136e958bfb9b3b2a6d2322b449d049e41b2fd54af749812f5abd6a1701a"
+      "id": "phase15-round17-worker-verification-evidence",
+      "sha256": "sha256:81bebd500156c545851b3caaf5e04bb56b71dcef713e4f0308a66ff181e14fa9"
     }
   ],
-  "requirementsTraceHash": "sha256:41853353ae7029af8435fc7b31d2a5b77a4889c96806b8288290028f7e13c0c5",
-  "rollbackPlanHash": "sha256:08b30627269f3fcf8bea21d4e1a764f9cf148292e7ffb0f4f3f5685339b05265",
-  "knownIssuesHash": "sha256:2cccd1c585863d6ccea896e81fb0eab225aa7f474a1c6ce7993320abb9f8cd58"
+  "requirementsTraceHash": "sha256:6778270881e3e9a775a5248f435c4b08b6922e737585794b1e443b3cd13b9889",
+  "rollbackPlanHash": "sha256:1e8b820fbf24e97111f13c3b4520a7f0602b555423d3465a31190ae2228e7f59",
+  "knownIssuesHash": "sha256:53facded4544f4e57709dfdb166a11833b1ec6f34692c8e15de1a771a4fef2fa"
 }
