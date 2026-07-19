@@ -52,7 +52,7 @@ For production, inject `CHANNEL_TOKEN_MASTER_KEY` from a secret manager and rest
 
 ## Role-specific bot instances
 
-Running `node bot.js` in a terminal starts a guided launcher. By default it configures `worker`, `planning-validator`, `development-validator`, and `gate-admin` sequentially in one session. It generates and stores a local master key in `.env` with mode `0600` when approved and missing, and then reuses or replaces each role's encrypted DB credential. Tokens are entered without terminal echo. After setup, one command can supervise all four role processes in the same terminal; one `Ctrl+C` stops the group.
+Running `node bot.js` in a terminal starts a guided launcher. It presents the user-facing roles `Developer`, `PM`, `Code Reviewer`, and `Release Manager`, mapped internally to `worker`, `planning-validator`, `development-validator`, and `gate-admin`. By default it configures all four sequentially in one session. It generates and stores a local master key in `.env` with mode `0600` when approved and missing, and then reuses or replaces each role's encrypted DB credential. Tokens are entered without terminal echo. After setup, one command can supervise all four role processes in the same terminal; one `Ctrl+C` stops the group.
 
 The all-role launcher assigns distinct prefixes automatically: `!dev`, `!pm`, `!review`, and `!release`. Override an individual prefix with `WORKER_COMMAND_PREFIX`, `PLANNING_VALIDATOR_COMMAND_PREFIX`, `DEVELOPMENT_VALIDATOR_COMMAND_PREFIX`, or `GATE_ADMIN_COMMAND_PREFIX`.
 

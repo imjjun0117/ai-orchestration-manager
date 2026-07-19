@@ -9,7 +9,7 @@ const test = require("node:test");
 const credentialService = require("../../src/channels/channelCredentialService");
 const { interactiveSetup } = require("../../scripts/channel-credentials");
 const DiscordAdapter = require("../../src/channels/discordAdapter");
-const { ensureMasterKey, launchRoles, requestedRole, selectRole } = require("../../bot");
+const { ensureMasterKey, launchRoles, requestedRole, ROLE_LABELS, selectRole } = require("../../bot");
 
 test("channel token encryption round-trips without storing plaintext", async () => {
   const previous = process.env.CHANNEL_TOKEN_MASTER_KEY;
@@ -199,8 +199,15 @@ test("bot launcher selects supported roles by number or name", async () => {
     "development-validator",
     "gate-admin",
   ]);
+  assert.deepEqual(ROLE_LABELS, {
+    worker: "Developer",
+    "planning-validator": "PM",
+    "development-validator": "Code Reviewer",
+    "gate-admin": "Release Manager",
+  });
   assert.equal(await selectRole(async () => "2"), "planning-validator");
   assert.equal(await selectRole(async () => "gate-admin"), "gate-admin");
+  assert.equal(await selectRole(async () => "Code Reviewer"), "development-validator");
   await assert.rejects(selectRole(async () => "unknown"), /Unsupported role/);
   assert.equal(requestedRole(["--role", "worker"]), "worker");
   assert.equal(requestedRole([]), null);

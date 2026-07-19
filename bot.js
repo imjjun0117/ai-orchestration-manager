@@ -13,6 +13,12 @@ const envFilePath = process.env.ENV_FILE
 if (fs.existsSync(envFilePath)) dotenv.config({ path: envFilePath, override: false, quiet: true });
 
 const ROLES = ["worker", "planning-validator", "development-validator", "gate-admin"];
+const ROLE_LABELS = {
+  worker: "Developer",
+  "planning-validator": "PM",
+  "development-validator": "Code Reviewer",
+  "gate-admin": "Release Manager",
+};
 const ROLE_PREFIXES = {
   worker: "!dev",
   "planning-validator": "!pm",
@@ -26,11 +32,13 @@ function requestedRole(argv = process.argv.slice(2)) {
 }
 
 async function selectRole(ask) {
-  const lines = ROLES.map((role, index) => `${index + 1}) ${role}`).join("\n");
+  const lines = ROLES.map((role, index) => `${index + 1}) ${ROLE_LABELS[role]}`).join("\n");
   const answer = String(await ask(`Select bot role:\n${lines}\nChoice`, "1")).trim().toLowerCase();
   const numeric = Number.parseInt(answer, 10);
   if (Number.isInteger(numeric) && numeric >= 1 && numeric <= ROLES.length) return ROLES[numeric - 1];
   if (ROLES.includes(answer)) return answer;
+  const labelMatch = ROLES.find((role) => ROLE_LABELS[role].toLowerCase() === answer);
+  if (labelMatch) return labelMatch;
   throw new Error(`Unsupported role: ${answer}`);
 }
 
@@ -95,7 +103,7 @@ function launchRoles(roles = ROLES, { spawnProcess = spawn } = {}) {
         stdio: "inherit",
       });
       children.push(child);
-      process.stdout.write(`[bot-supervisor] Started ${role} prefix=${commandPrefix} pid=${child.pid}\n`);
+      process.stdout.write(`[bot-supervisor] Started ${ROLE_LABELS[role]} prefix=${commandPrefix} pid=${child.pid}\n`);
       child.once("error", (error) => {
         if (failed) return;
         failed = true;
@@ -131,7 +139,7 @@ async function interactiveStart() {
   const rolesToConfigure = configureAll ? ROLES : [await selectRole(promptText)];
   try {
     for (const [index, role] of rolesToConfigure.entries()) {
-      process.stdout.write(`\n[bot-setup] Configuring ${role} (${index + 1}/${rolesToConfigure.length})\n`);
+      process.stdout.write(`\n[bot-setup] Configuring ${ROLE_LABELS[role]} (${index + 1}/${rolesToConfigure.length})\n`);
       await interactiveSetup({
         ask: async (label, defaultValue) => {
           if (label === "Channel") return "discord";
@@ -184,6 +192,7 @@ if (require.main === module) {
 
 module.exports = {
   ROLES,
+  ROLE_LABELS,
   ROLE_PREFIXES,
   ensureMasterKey,
   interactiveStart,
