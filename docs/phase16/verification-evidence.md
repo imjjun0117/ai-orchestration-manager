@@ -4,6 +4,9 @@
 
 ## 현재 결과
 
+- 구현 commit: `810274ea66ddb076e5bbdfb240c9902096f93082`
+- live migration: `017_workspace_safety` applied
+- migration checksum: `1976f2cf1d1c94874ee65ef5441faad68ec61695773873fa6a2f27e233452ed6`
 - `npm test`: PASS
 - `npm run test:phase16`: PASS
 - `npm run test:phase16:db`: PASS, 8/8
@@ -11,6 +14,9 @@
 - `node --check`: PASS
 - disposable PostgreSQL cleanup: PASS
 - live DB mutation during integration tests: 없음
+- `npm run verify:db`: PASS after live additive migration
+- post-migration state: active lease 0, open workspace 0, claimed finalization 0, reconciliation 0
+- activation state: `ISOLATED_WORKSPACE_MODE=false`, `CODER_WRITE_ENABLED=false`, canonical fallback false
 
 검증된 주요 시나리오:
 
