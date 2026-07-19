@@ -1,7 +1,7 @@
 {
   "schemaVersion": 1,
   "phaseId": "phase-15",
-  "submissionRound": 17,
+  "submissionRound": 1,
   "submittedBy": "phase15-worker-codex-01",
   "baseCommitSha": "c45c66107e6740c73a490eab5b015f6afbf0d3a1",
   "candidateCommitSha": "7f67184d5eb5b375964403ca4c5145f9f4035b03",
@@ -305,7 +305,7 @@
   ],
   "testEvidence": [
     {
-      "id": "phase15-round17-worker-verification-evidence",
+      "id": "phase15-final-bootstrap-worker-verification-evidence",
       "sha256": "sha256:81bebd500156c545851b3caaf5e04bb56b71dcef713e4f0308a66ff181e14fa9"
     }
   ],
