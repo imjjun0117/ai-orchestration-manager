@@ -1,7 +1,7 @@
 const crypto = require("crypto");
 const { execFileSync } = require("child_process");
 const defaultDb = require("../db");
-const { assertIsolatedWriteEnabled } = require("./featureFlags");
+const { assertPhase16WriteEnabled } = require("./featureFlags");
 const artifactService = require("./artifactService");
 
 function runGit(repositoryRoot, args) {
@@ -14,7 +14,13 @@ function runGit(repositoryRoot, args) {
 
 function assertTargetRef(targetRef) {
   const value = String(targetRef || "").trim();
-  if (!/^refs\/heads\/[A-Za-z0-9][A-Za-z0-9._/-]*$/.test(value) || value.includes("..") || value.endsWith("/")) {
+  const components = value.startsWith("refs/heads/") ? value.slice("refs/heads/".length).split("/") : [];
+  if (!/^refs\/heads\/[A-Za-z0-9][A-Za-z0-9._/-]*$/.test(value)
+      || value.includes("..")
+      || value.includes("//")
+      || value.includes("@{")
+      || value.endsWith("/")
+      || components.some((component) => !component || component.startsWith(".") || component.endsWith(".lock"))) {
     throw new Error(`unsafe target ref: ${targetRef}`);
   }
   return value;
@@ -95,7 +101,7 @@ async function finalizeCandidate(
   },
   { db = defaultDb, env = process.env } = {}
 ) {
-  assertIsolatedWriteEnabled(env);
+  await assertPhase16WriteEnabled({ db, env });
   assertBareCanonicalRepository(canonicalRepository);
   const safeTargetRef = assertTargetRef(targetRef);
   const rebuilt = artifactService.buildCandidateArtifact({

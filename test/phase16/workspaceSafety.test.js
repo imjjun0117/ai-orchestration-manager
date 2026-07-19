@@ -7,12 +7,14 @@ const { afterEach, test } = require("node:test");
 
 const { buildCandidateArtifact, describeCandidateArtifact } = require("../../src/workspace/artifactService");
 const { buildExecutionContextManifest } = require("../../src/workspace/contextManifestService");
-const { assertIsolatedWriteEnabled } = require("../../src/workspace/featureFlags");
+const { assertIsolatedWriteEnabled, assertPhase16WriteEnabled } = require("../../src/workspace/featureFlags");
 const { assertTargetRef } = require("../../src/workspace/finalizerService");
 const { assertManagedWorkspacePath, ensureIsolationRoot } = require("../../src/workspace/isolatedWorkspaceService");
 const processService = require("../../src/core/processService");
 const { buildContainerInvocation, sanitizedEnvironment, validateContainerImage } = require("../../src/workspace/sandboxService");
 const { assertAgentWorkspace, assertRegisteredAgentWorkspace } = require("../../src/workspace/workspaceExecutionPolicy");
+const { formatBoundApproval } = require("../../src/workspace/approvalDisplay");
+const { assertArtifactScope, globPattern } = require("../../src/workspace/taskWorkspaceWorkflowService");
 
 const temporaryPaths = [];
 
@@ -40,6 +42,22 @@ test("isolated writes fail closed until both Phase 16 flags are enabled", () => 
     assertIsolatedWriteEnabled({ ISOLATED_WORKSPACE_MODE: "TRUE", CODER_WRITE_ENABLED: "true" }),
     true
   );
+});
+
+test("isolated writes require an ACCEPTED Phase 16 Gate in addition to flags", async () => {
+  const env = { ISOLATED_WORKSPACE_MODE: "true", CODER_WRITE_ENABLED: "true" };
+  await assert.rejects(
+    assertPhase16WriteEnabled({
+      env,
+      db: { query: async () => ({ rows: [{ id: "phase-16", status: "VALIDATION_IN_PROGRESS" }] }) },
+    }),
+    /must be ACCEPTED/
+  );
+  const accepted = await assertPhase16WriteEnabled({
+    env,
+    db: { query: async () => ({ rows: [{ id: "phase-16", status: "ACCEPTED" }] }) },
+  });
+  assert.equal(accepted.status, "ACCEPTED");
 });
 
 test("Coder and QA can never fall back to the canonical workspace", () => {
@@ -76,20 +94,28 @@ test("Coder execution requires a matching task registration and live write lease
   await assert.rejects(
     assertRegisteredAgentWorkspace(
       { agentName: "codex", taskId: null, cwd: isolated, env },
-      { db: { query: async () => ({ rows: [] }) } }
+      { db: { query: async () => ({ rows: [{ id: "phase-16", status: "ACCEPTED" }] }) } }
     ),
     /requires a task ID/
   );
   await assert.rejects(
     assertRegisteredAgentWorkspace(
       { agentName: "qa", taskId: "TASK-1", cwd: isolated, env },
-      { db: { query: async () => ({ rows: [] }) } }
+      { db: {
+        query: async (sql) => sql.includes("delivery_phases")
+          ? { rows: [{ id: "phase-16", status: "ACCEPTED" }] }
+          : { rows: [] },
+      } }
     ),
     /live registered task workspace/
   );
   const accepted = await assertRegisteredAgentWorkspace(
     { agentName: "coder", taskId: "TASK-1", cwd: isolated, env },
-    { db: { query: async () => ({ rows: [{ id: "iw-1", fencing_token: 3 }] }) } }
+    { db: {
+      query: async (sql) => sql.includes("delivery_phases")
+        ? { rows: [{ id: "phase-16", status: "ACCEPTED" }] }
+        : { rows: [{ id: "iw-1", fencing_token: 3 }] },
+    } }
   );
   assert.equal(accepted.registration.id, "iw-1");
 });
@@ -221,6 +247,56 @@ test("execution context hash changes with instruction, scope, and expected task 
   );
 });
 
+test("approval presentation shows exact commits, hashes, paths, risk, expiry, and finalizer scope", () => {
+  const output = formatBoundApproval({
+    approvalId: 42,
+    taskId: "TASK-42",
+    status: "PENDING",
+    artifactId: "artifact-42",
+    artifactHash: `sha256:${"a".repeat(64)}`,
+    contextManifestHash: `sha256:${"b".repeat(64)}`,
+    diffHash: `sha256:${"c".repeat(64)}`,
+    baseCommitSha: "1".repeat(40),
+    candidateCommitSha: "2".repeat(40),
+    changedPaths: ["src/a.js", "test/a.test.js"],
+    summary: { changedFileCount: 2, additions: 10, deletions: 3, binaryFiles: 0, deletedFiles: 0 },
+    riskSignals: ["LARGE_DIFF"],
+    expectedTaskState: "PENDING_COMMIT_APPROVAL",
+    expectedTaskVersion: 7,
+    expiresAt: "2030-01-01T00:00:00.000Z",
+    allowedActorIds: ["gate-admin"],
+    allowedTargetRefs: ["refs/heads/main"],
+  });
+  for (const expected of [
+    "approval #42", "artifact-42", "src/a.js", "test/a.test.js", "LARGE_DIFF",
+    "PENDING_COMMIT_APPROVAL@7", "gate-admin", "refs/heads/main", "!approve 42",
+  ]) assert.match(output, new RegExp(expected.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")));
+});
+
+test("candidate scope matcher rejects paths and diff size outside the approved context", () => {
+  assert.equal(globPattern("src/**").test("src/nested/file.js"), true);
+  const candidate = {
+    files: [{ path: "src/a.js" }],
+    manifest: { summary: { changedFileCount: 1, additions: 4, deletions: 1 } },
+  };
+  assert.equal(assertArtifactScope(candidate, {
+    allowedPaths: ["src/**"],
+    constraints: { maxChangedFiles: 2, maxDiffLines: 10 },
+  }), true);
+  assert.throws(
+    () => assertArtifactScope({ ...candidate, files: [{ path: "outside.txt" }] }, { allowedPaths: ["src/**"] }),
+    /outside the approved scope/
+  );
+  assert.throws(
+    () => assertArtifactScope(candidate, { allowedPaths: ["src/**"], constraints: { maxDiffLines: 2 } }),
+    /diff-line limit/
+  );
+  assert.throws(
+    () => assertArtifactScope({ ...candidate, files: [{ path: "src/.env.production" }] }, { allowedPaths: ["src/**"] }),
+    /sensitive paths/
+  );
+});
+
 test("managed workspace and finalizer references reject escape forms", () => {
   const canonical = temporaryDirectory("phase16-canonical-");
   const isolation = temporaryDirectory("phase16-isolation-");
@@ -233,7 +309,10 @@ test("managed workspace and finalizer references reject escape forms", () => {
   );
   assert.throws(() => assertManagedWorkspacePath(canonical, isolation), /outside/);
   assert.equal(assertTargetRef("refs/heads/phase16/candidate"), "refs/heads/phase16/candidate");
-  for (const ref of ["main", "refs/tags/v1", "refs/heads/../escape", "refs/heads/main/"]) {
+  for (const ref of [
+    "main", "refs/tags/v1", "refs/heads/../escape", "refs/heads/main/",
+    "refs/heads/main.lock", "refs/heads/.hidden", "refs/heads/a//b", "refs/heads/a@{1}",
+  ]) {
     assert.throws(() => assertTargetRef(ref), /unsafe target ref/);
   }
 });

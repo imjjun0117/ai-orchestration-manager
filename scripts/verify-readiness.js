@@ -13,6 +13,9 @@ const phase15ReworkMigrationPath = path.join(repoRoot, "src/db/migrations/015_de
 const phase15OperationsMigrationPath = path.join(repoRoot, "src/db/migrations/015_delivery_governance_operations.up.sql");
 const channelCredentialsMigrationPath = path.join(repoRoot, "src/db/migrations/016_channel_credentials.up.sql");
 const phase16MigrationPath = path.join(repoRoot, "src/db/migrations/017_workspace_safety.up.sql");
+const phase16ReworkMigrationPath = path.join(repoRoot, "src/db/migrations/017_workspace_safety_rework.up.sql");
+const botRuntimePath = path.join(repoRoot, "bot-runtime.js");
+const phase16CliPath = path.join(repoRoot, "scripts/phase16-workspace.js");
 const packagePath = path.join(repoRoot, "package.json");
 
 const REQUIRED_ENV_KEYS = [
@@ -364,6 +367,37 @@ function checkSchemaStatic() {
   ]) {
     assert(phase16Migration.includes(snippet), `Phase 16 migration is missing required snippet: ${snippet}`);
   }
+  assert(fs.existsSync(phase16ReworkMigrationPath), "Phase 16 rework migration is missing");
+  const phase16ReworkMigration = fs.readFileSync(phase16ReworkMigrationPath, "utf8");
+  for (const snippet of [
+    "trg_phase16_validate_finalization_task_state",
+    "trg_phase16_guard_claimed_task_state",
+    "reconcile_candidate_finalization",
+    "FOR UPDATE",
+    "REVOKE ALL ON FUNCTION reconcile_candidate_finalization",
+  ]) {
+    assert(phase16ReworkMigration.includes(snippet), `Phase 16 rework migration is missing required snippet: ${snippet}`);
+  }
+  const botRuntime = fs.readFileSync(botRuntimePath, "utf8");
+  for (const snippet of [
+    "workspaceWorkflowService.runCoderStage",
+    "workspaceWorkflowService.prepareCandidateApproval",
+    "workspaceWorkflowService.finalizeApprovedCandidate",
+    "taskControlService.pauseTaskProcess",
+    "taskControlService.resumeTaskProcess",
+    "taskControlService.killTaskProcess",
+    "approvalService.getBoundApprovalDisplay",
+  ]) {
+    assert(botRuntime.includes(snippet), `Phase 16 Discord runtime wiring is missing: ${snippet}`);
+  }
+  const phase16Cli = fs.readFileSync(phase16CliPath, "utf8");
+  for (const command of [
+    "candidate-approval", "approval-show", "approval-approve", "approval-reject",
+    "control-pause", "control-resume", "control-kill", "reconcile-workspace",
+    "reconcile-finalization", "reconcile-processes",
+  ]) {
+    assert(phase16Cli.includes(command), `Phase 16 operator CLI is missing: ${command}`);
+  }
   pass("schema and bundled migration static checks");
 }
 
@@ -436,6 +470,7 @@ async function checkLiveDatabase() {
       "release_workspace_lease",
       "claim_candidate_finalization",
       "complete_candidate_finalization",
+      "reconcile_candidate_finalization",
     ];
     const requiredFunctions = [...requiredPhase15Functions, ...requiredPhase16Functions];
     const { rows: functionRows } = await db.query(
@@ -474,6 +509,40 @@ async function checkLiveDatabase() {
       publicTableGrants.length === 0,
       `bundled Phase 15 tables still accessible by PUBLIC: ${publicTableGrants.map((row) => row.table_name).join(", ")}`
     );
+
+    const { rows: phase16TriggerRows } = await db.query(
+      `SELECT tgname
+       FROM pg_trigger
+       WHERE NOT tgisinternal
+         AND tgname = ANY($1)`,
+      [[
+        "trg_phase16_validate_finalization_task_state",
+        "trg_phase16_guard_claimed_task_state",
+        "trg_phase16_stale_superseded_approvals",
+      ]]
+    );
+    const phase16Triggers = new Set(phase16TriggerRows.map((row) => row.tgname));
+    for (const triggerName of [
+      "trg_phase16_validate_finalization_task_state",
+      "trg_phase16_guard_claimed_task_state",
+      "trg_phase16_stale_superseded_approvals",
+    ]) {
+      assert(phase16Triggers.has(triggerName), `live DB is missing required Phase 16 trigger ${triggerName}`);
+    }
+
+    const { checksum } = require("../src/db/migrationRunner");
+    const migrationChecksums = new Map([
+      ["017_workspace_safety", checksum(fs.readFileSync(phase16MigrationPath, "utf8"))],
+      ["017_workspace_safety_rework", checksum(fs.readFileSync(phase16ReworkMigrationPath, "utf8"))],
+    ]);
+    const { rows: migrationRows } = await db.query(
+      `SELECT id, checksum FROM schema_migrations WHERE id = ANY($1)`,
+      [[...migrationChecksums.keys()]]
+    );
+    const appliedMigrations = new Map(migrationRows.map((row) => [row.id, row.checksum]));
+    for (const [migrationId, expectedChecksum] of migrationChecksums) {
+      assert(appliedMigrations.get(migrationId) === expectedChecksum, `live DB migration checksum mismatch: ${migrationId}`);
+    }
 
     const { rows: roleRows } = await db.query(
       `SELECT role, agent_name FROM role_bindings WHERE role = ANY($1)`,

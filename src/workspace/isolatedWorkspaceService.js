@@ -4,7 +4,7 @@ const os = require("os");
 const path = require("path");
 const { execFileSync } = require("child_process");
 const defaultDb = require("../db");
-const { assertIsolatedWriteEnabled, isolatedWorkspaceMode } = require("./featureFlags");
+const { assertPhase16WriteEnabled, isolatedWorkspaceMode } = require("./featureFlags");
 const artifactService = require("./artifactService");
 const workspaceLeaseService = require("./workspaceLeaseService");
 
@@ -74,7 +74,7 @@ async function createIsolatedWorkspace(
   },
   { db = defaultDb, env = process.env } = {}
 ) {
-  if (!shadowMode) assertIsolatedWriteEnabled(env);
+  if (!shadowMode) await assertPhase16WriteEnabled({ db, env });
   const { realRoot, realCanonical } = ensureIsolationRoot(isolationRoot, canonicalRepository);
   artifactService.resolveCommit(realCanonical, baseCommitSha);
   const containerPath = fs.mkdtempSync(path.join(realRoot, `${safeId(taskId)}-`));

@@ -1,4 +1,5 @@
 const db = require("../db");
+const { describeCandidateArtifact } = require("../workspace/artifactService");
 
 /**
  * 새 승인 대기 항목을 연다. task가 PENDING_*_APPROVAL 상태로 전이할 때마다 호출한다.
@@ -236,11 +237,108 @@ async function resolveBoundApproval(
   return rows[0];
 }
 
+function boundApprovalDisplay(row) {
+  if (!row) return null;
+  const manifest = row.manifest_json || {};
+  const files = Array.isArray(row.file_manifest_json) ? row.file_manifest_json : [];
+  const artifact = describeCandidateArtifact({
+    manifest,
+    files,
+    artifactHash: row.artifact_hash,
+    diffHash: row.diff_hash,
+  });
+  const scope = row.delegation_scope || {};
+  return {
+    approvalId: row.id,
+    taskId: row.task_id,
+    action: row.action,
+    status: row.status,
+    requestedBy: row.requested_by,
+    approvedBy: row.approved_by,
+    reason: row.reason,
+    artifactId: row.artifact_id,
+    artifactHash: row.artifact_hash,
+    diffHash: row.diff_hash,
+    contextManifestHash: row.context_manifest_hash,
+    baseCommitSha: row.base_commit_sha,
+    candidateCommitSha: row.candidate_commit_sha,
+    changedPaths: artifact.changedPaths,
+    summary: artifact.summary,
+    riskSignals: artifact.riskSignals,
+    expectedTaskState: row.expected_task_state,
+    expectedTaskVersion: Number(row.expected_task_version),
+    workspaceId: row.workspace_id,
+    leaseOwnerOperationId: row.lease_owner_operation_id,
+    fencingToken: Number(row.fencing_token),
+    expiresAt: row.expires_at,
+    allowedActorIds: Array.isArray(scope.allowedActorIds) ? scope.allowedActorIds : [],
+    allowedTargetRefs: Array.isArray(scope.allowedTargetRefs) ? scope.allowedTargetRefs : [],
+    finalization: row.finalization_id ? {
+      id: row.finalization_id,
+      status: row.finalization_status,
+      targetRef: row.finalization_target_ref,
+      claimedBy: row.finalization_claimed_by,
+    } : null,
+  };
+}
+
+async function getBoundApprovalDisplay(
+  { approvalId = null, taskId = null, pendingOnly = false },
+  { db: database = db } = {}
+) {
+  if (!approvalId && !taskId) throw new Error("approvalId or taskId is required");
+  const { rows } = await database.query(
+    `SELECT p.*, a.diff_hash, a.manifest_json, a.file_manifest_json,
+            f.id AS finalization_id, f.status AS finalization_status,
+            f.target_ref AS finalization_target_ref, f.claimed_by AS finalization_claimed_by
+     FROM approvals p
+     JOIN artifacts a ON a.id = p.artifact_id
+     LEFT JOIN LATERAL (
+       SELECT id, status, target_ref, claimed_by
+       FROM workspace_finalizations
+       WHERE approval_id = p.id
+       ORDER BY claimed_at DESC
+       LIMIT 1
+     ) f ON TRUE
+     WHERE ($1::bigint IS NULL OR p.id = $1)
+       AND ($2::varchar IS NULL OR p.task_id = $2)
+       AND ($3::boolean = FALSE OR p.status = 'PENDING')
+       AND p.artifact_id IS NOT NULL
+     ORDER BY p.created_at DESC
+     LIMIT 1`,
+    [approvalId, taskId, pendingOnly]
+  );
+  return boundApprovalDisplay(rows[0]);
+}
+
+async function resolveDisplayedBoundApproval(
+  { approvalId, approved, resolvedBy, reason = null },
+  { db: database = db } = {}
+) {
+  const display = await getBoundApprovalDisplay({ approvalId, pendingOnly: true }, { db: database });
+  if (!display) throw new Error("pending bound approval does not exist");
+  const resolved = await resolveBoundApproval({
+    approvalId: display.approvalId,
+    artifactId: display.artifactId,
+    artifactHash: display.artifactHash,
+    contextManifestHash: display.contextManifestHash,
+    baseCommitSha: display.baseCommitSha,
+    candidateCommitSha: display.candidateCommitSha,
+    approved,
+    resolvedBy,
+    reason,
+  }, { db: database });
+  return { resolved, display };
+}
+
 module.exports = {
+  boundApprovalDisplay,
+  getBoundApprovalDisplay,
   openApproval,
   openBoundApproval,
   getLatestPendingApproval,
   resolveBoundApproval,
+  resolveDisplayedBoundApproval,
   resolveLatest,
   resolvePendingAction,
 };

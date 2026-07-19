@@ -2,14 +2,17 @@
 
 이 문서는 worker의 사전 evidence이며 독립 검증자의 서명 verdict가 아니다.
 
-## 현재 결과
+## Round 2 재작업 중간 결과
 
-- 구현 commit: `810274ea66ddb076e5bbdfb240c9902096f93082`
-- live migration: `017_workspace_safety` applied
+- Round 1 candidate: `38f5ff6b6894fb39861c1ba032d5452b2b102173`
+- Round 1 planning verdict: `CHANGES_REQUESTED`
+- live core migration: `017_workspace_safety` applied (파일과 checksum은 변경하지 않음)
+- additive rework migration: `017_workspace_safety_rework` applied
+- additive migration checksum: `1165f1b8f3f0566bad115a66e95349ee9e750394b18fa7630c0814661d61be9e`
 - migration checksum: `1976f2cf1d1c94874ee65ef5441faad68ec61695773873fa6a2f27e233452ed6`
 - `npm test`: PASS
 - `npm run test:phase16`: PASS
-- `npm run test:phase16:db`: PASS, 8/8
+- `npm run test:phase16:db`: PASS, 11/11
 - `npm run test:phase16:container`: PASS, 1/1 actual Docker policy probe
 - `node --check`: PASS
 - disposable PostgreSQL cleanup: PASS
@@ -29,5 +32,10 @@
 - dead process와 expired workspace lease reconciliation
 - PUBLIC 권한 0, artifact/event 불변성
 - `017` down/up 및 legacy task/approval 보존
+- DB Gate가 `ACCEPTED`가 아니면 flags가 true여도 write 거부
+- finalization claim/task update/superseding artifact 동시성 직렬화
+- isolated execution → candidate → detailed approval → bare finalizer → cleanup E2E
+- Discord `!implement`, exact `!approval/!approve ID`, safe pause/resume/kill wiring
+- reconciliation dry-run/apply, incident evidence, canonical ref 검산
 
-최종 commit, canonical submission manifest, bundle hash는 전체 구현과 문서가 commit된 뒤 이 문서에 추가한다.
+최종 candidate commit과 bundle hash의 authoritative 값은 sealed manifest가 제공한다. commit hash의 자기참조로 candidate가 바뀌는 문제를 피하기 위해 이 evidence 본문에는 값을 중복 기록하지 않는다.

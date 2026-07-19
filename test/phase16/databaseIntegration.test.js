@@ -23,6 +23,8 @@ if (!enabled) {
   const isolatedWorkspaceService = require("../../src/workspace/isolatedWorkspaceService");
   const leaseService = require("../../src/workspace/workspaceLeaseService");
   const taskControlService = require("../../src/workspace/taskControlService");
+  const workflowService = require("../../src/workspace/taskWorkspaceWorkflowService");
+  const reconciliationService = require("../../src/workspace/reconciliationService");
 
   const baseConnectionString = process.env.PHASE16_TEST_DATABASE_URL || process.env.DATABASE_URL;
   if (!baseConnectionString) throw new Error("PHASE16_TEST_DATABASE_URL or DATABASE_URL is required");
@@ -33,6 +35,7 @@ if (!enabled) {
   let adminPool;
   let pool;
   let migrationApplied = false;
+  let reworkMigrationApplied = false;
   const temporaryPaths = [];
   const HASH_A = `sha256:${"a".repeat(64)}`;
   const HASH_B = `sha256:${"b".repeat(64)}`;
@@ -55,11 +58,27 @@ if (!enabled) {
     pool = new Pool({ connectionString: databaseUrl.toString(), max: 40 });
     await pool.query(fs.readFileSync(path.resolve(__dirname, "../../src/db/schema.sql"), "utf8"));
     await migrateUp("017_workspace_safety", { pool });
+    await migrateUp("017_workspace_safety_rework", { pool });
+    await pool.query(
+      `CREATE TABLE delivery_phases(
+         id TEXT PRIMARY KEY,
+         status TEXT NOT NULL,
+         accepted_at TIMESTAMPTZ
+       )`
+    );
+    await pool.query(
+      `INSERT INTO delivery_phases(id, status, accepted_at)
+       VALUES ('phase-16', 'ACCEPTED', CURRENT_TIMESTAMP)`
+    );
     migrationApplied = true;
+    reworkMigrationApplied = true;
   });
 
   after(async () => {
     if (pool) {
+      if (reworkMigrationApplied) {
+        await migrateDown("017_workspace_safety_rework", { pool, allowDestructive: true });
+      }
       if (migrationApplied) await migrateDown("017_workspace_safety", { pool, allowDestructive: true });
       await pool.end();
     }
@@ -354,6 +373,10 @@ if (!enabled) {
     assert.equal(claims.filter((claim) => claim.status === "fulfilled").length, 1);
     const claim = claims.find((entry) => entry.status === "fulfilled").value;
     await assert.rejects(
+      pool.query(`UPDATE tasks SET row_version = row_version + 1 WHERE id = $1`, [taskId]),
+      /task state cannot change during an active finalization claim/
+    );
+    await assert.rejects(
       pool.query(
         `INSERT INTO artifacts(
            id, task_id, workspace_id, artifact_type, artifact_hash, diff_hash,
@@ -392,6 +415,116 @@ if (!enabled) {
     assert.equal(reconciled.status, "NEEDS_RECONCILIATION");
     await assert.rejects(pool.query("UPDATE artifacts SET created_by = 'tamper' WHERE id = $1", [artifactId]), /immutable/);
     await assert.rejects(pool.query("DELETE FROM artifacts WHERE id = $1", [artifactId]), /immutable/);
+  });
+
+  test("finalization claim and a superseding artifact serialize through the task row", async () => {
+    const taskId = "TASK-PHASE16-CLAIM-RACE";
+    const workspaceId = "canonical:phase16-claim-race";
+    const artifactId = "artifact-phase16-claim-race";
+    const base = "4".repeat(40);
+    const candidate = "5".repeat(40);
+    await createTask(taskId);
+    await pool.query(
+      `INSERT INTO artifacts(
+         id, task_id, workspace_id, artifact_type, artifact_hash, diff_hash,
+         context_manifest_hash, base_commit_sha, candidate_commit_sha,
+         manifest_json, file_manifest_json, created_by
+       ) VALUES ($1, $2, $3, 'CANDIDATE_COMMIT', $4, $5, $5, $6, $7,
+                 '{}'::jsonb, '[]'::jsonb, 'builder')`,
+      [artifactId, taskId, workspaceId, HASH_A, HASH_B, base, candidate]
+    );
+    const lease = await leaseService.acquireLease({
+      workspaceId,
+      ownerInstanceId: "release-manager",
+      ownerTaskId: taskId,
+      ownerOperationId: "finalize-claim-race",
+      mode: "FINALIZE_EXCLUSIVE",
+      ttlMs: 30_000,
+    }, { db: pool });
+    const approval = await approvalService.openBoundApproval({
+      taskId,
+      requestedBy: "builder",
+      artifactId,
+      artifactHash: HASH_A,
+      contextManifestHash: HASH_B,
+      baseCommitSha: base,
+      candidateCommitSha: candidate,
+      workspaceId,
+      leaseOwnerOperationId: lease.lease_owner_operation_id,
+      fencingToken: lease.fencing_token,
+      delegationScope: {
+        allowedActorIds: ["release-manager"],
+        allowedTargetRefs: ["refs/heads/main"],
+      },
+      expectedTaskState: "READY_FOR_COMMIT",
+      expectedTaskVersion: 0,
+      expiresAt: new Date(Date.now() + 60_000),
+    }, { db: pool });
+    await approvalService.resolveBoundApproval({
+      approvalId: approval.id,
+      artifactId,
+      artifactHash: HASH_A,
+      contextManifestHash: HASH_B,
+      baseCommitSha: base,
+      candidateCommitSha: candidate,
+      approved: true,
+      resolvedBy: "reviewer",
+    }, { db: pool });
+
+    const outcomes = await Promise.allSettled([
+      finalizerService.claimFinalization({
+        finalizationId: "finalization-claim-race",
+        approvalId: approval.id,
+        artifactId,
+        workspaceId,
+        leaseId: lease.lease_id,
+        ownerOperationId: lease.lease_owner_operation_id,
+        fencingToken: lease.fencing_token,
+        baseCommitSha: base,
+        candidateCommitSha: candidate,
+        artifactHash: HASH_A,
+        contextManifestHash: HASH_B,
+        targetRef: "refs/heads/main",
+        actorId: "release-manager",
+      }, { db: pool }),
+      pool.query(
+        `INSERT INTO artifacts(
+           id, task_id, workspace_id, artifact_type, artifact_hash, diff_hash,
+           context_manifest_hash, base_commit_sha, candidate_commit_sha,
+           manifest_json, file_manifest_json, created_by
+         ) VALUES ('artifact-phase16-claim-race-new', $1, $2, 'CANDIDATE_COMMIT', $3, $4, $4,
+                   $5, $6, '{}'::jsonb, '[]'::jsonb, 'builder')`,
+        [taskId, workspaceId, HASH_B, HASH_A, base, "6".repeat(40)]
+      ),
+    ]);
+    assert.equal(outcomes.filter((outcome) => outcome.status === "fulfilled").length, 1);
+
+    const active = await pool.query(
+      `SELECT * FROM workspace_finalizations WHERE id = 'finalization-claim-race'`
+    );
+    if (active.rows[0]) {
+      assert.equal(active.rows[0].status, "CLAIMED");
+      const newer = await pool.query(
+        `SELECT COUNT(*)::int AS count FROM artifacts WHERE id = 'artifact-phase16-claim-race-new'`
+      );
+      assert.equal(newer.rows[0].count, 0);
+      await finalizerService.completeFinalization({
+        finalizationId: active.rows[0].id,
+        claimToken: active.rows[0].claim_token,
+        status: "FAILED",
+        errorMessage: "race test cleanup",
+        actorId: "release-manager",
+      }, { db: pool });
+    } else {
+      const stale = await pool.query(`SELECT status FROM approvals WHERE id = $1`, [approval.id]);
+      assert.equal(stale.rows[0].status, "STALE");
+      await leaseService.releaseLease({
+        leaseId: lease.lease_id,
+        ownerInstanceId: lease.lease_owner_instance_id,
+        ownerOperationId: lease.lease_owner_operation_id,
+        fencingToken: lease.fencing_token,
+      }, { db: pool });
+    }
   });
 
   test("bare-repository finalizer imports and atomically advances only the approved commit", async () => {
@@ -487,6 +620,264 @@ if (!enabled) {
     });
     assert.equal(result.status, "SUCCEEDED");
     assert.equal(git(bare, "rev-parse", "refs/heads/main"), candidate);
+  });
+
+  test("operational workflow connects isolated execution to displayed approval, finalizer, and cleanup", async () => {
+    const source = fs.mkdtempSync(path.join(os.tmpdir(), "phase16-flow-source-"));
+    const bare = fs.mkdtempSync(path.join(os.tmpdir(), "phase16-flow-bare-"));
+    const isolationRoot = fs.mkdtempSync(path.join(os.tmpdir(), "phase16-flow-root-"));
+    temporaryPaths.push(source, bare, isolationRoot);
+    git(source, "init", "--quiet");
+    git(source, "config", "user.name", "Phase 16 Flow Test");
+    git(source, "config", "user.email", "flow@example.invalid");
+    fs.mkdirSync(path.join(source, "src"));
+    fs.writeFileSync(path.join(source, "src", "flow.txt"), "base\n");
+    git(source, "add", "src/flow.txt");
+    git(source, "commit", "--quiet", "-m", "base");
+    const base = git(source, "rev-parse", "HEAD");
+    execFileSync("git", ["init", "--bare", "--quiet", bare]);
+    git(source, "push", "--quiet", bare, "HEAD:refs/heads/main");
+
+    const taskId = "TASK-PHASE16-OPERATIONAL-FLOW";
+    await createTask(taskId, "PENDING_PLAN_APPROVAL");
+    const coding = await workflowService.transitionTaskState({
+      taskId,
+      expectedState: "PENDING_PLAN_APPROVAL",
+      expectedVersion: 0,
+      nextState: "CODING",
+      currentAgent: "coder",
+    }, { db: pool });
+    const prepared = await workflowService.runCoderStage({
+      taskId,
+      expectedTaskState: coding.status,
+      expectedTaskVersion: Number(coding.row_version),
+      canonicalRepository: bare,
+      baseCommitSha: base,
+      ownerInstanceId: "worker",
+      originalRequest: "update the flow file",
+      plan: "change src/flow.txt only",
+      instruction: "update the approved file",
+      allowedPaths: ["src/**"],
+      allowedTools: ["codex"],
+      riskLevel: "low",
+      isolationRoot,
+      shadowMode: false,
+    }, {
+      db: pool,
+      env: { ISOLATED_WORKSPACE_MODE: "true", CODER_WRITE_ENABLED: "true" },
+      runCoder: async ({ cwd, contextManifestHash }) => {
+        assert.match(contextManifestHash, /^sha256:[0-9a-f]{64}$/);
+        fs.writeFileSync(path.join(cwd, "src", "flow.txt"), "candidate\n");
+        return "implemented";
+      },
+    });
+    assert.equal(prepared.result, "implemented");
+    const awaitingApproval = await workflowService.transitionTaskState({
+      taskId,
+      expectedState: coding.status,
+      expectedVersion: Number(coding.row_version),
+      nextState: "PENDING_COMMIT_APPROVAL",
+      currentAgent: "release-manager",
+    }, { db: pool });
+    const candidate = await workflowService.prepareCandidateApproval({
+      taskId,
+      expectedTaskState: awaitingApproval.status,
+      expectedTaskVersion: Number(awaitingApproval.row_version),
+      requestedBy: "worker",
+      finalizerActorId: "gate-admin",
+      targetRef: "refs/heads/main",
+      commitMessage: "task: operational flow",
+    }, {
+      db: pool,
+      env: { ISOLATED_WORKSPACE_MODE: "true", CODER_WRITE_ENABLED: "true" },
+    });
+    assert.equal(candidate.display.status, "PENDING");
+    assert.deepEqual(candidate.display.changedPaths, ["src/flow.txt"]);
+    assert.equal(candidate.display.summary.changedFileCount, 1);
+    assert.deepEqual(candidate.display.allowedActorIds, ["gate-admin"]);
+    assert.deepEqual(candidate.display.allowedTargetRefs, ["refs/heads/main"]);
+
+    const finalized = await workflowService.finalizeApprovedCandidate({
+      approvalId: candidate.approval.id,
+      resolvedBy: "discord:operator-1",
+      actorId: "gate-admin",
+    }, {
+      db: pool,
+      env: { ISOLATED_WORKSPACE_MODE: "true", CODER_WRITE_ENABLED: "true" },
+    });
+    assert.equal(finalized.finalization.status, "SUCCEEDED");
+    assert.equal(finalized.task.status, "DONE");
+    assert.equal(finalized.cleanup.status, "CLEANED");
+    assert.equal(finalized.reconciliationRequired, false);
+    assert.equal(git(bare, "rev-parse", "refs/heads/main"), candidate.artifact.candidate_commit_sha);
+    assert.equal(fs.existsSync(prepared.workspace.workspace_path), false);
+    const retried = await workflowService.finalizeApprovedCandidate({
+      approvalId: candidate.approval.id,
+      resolvedBy: "discord:operator-1",
+      actorId: "gate-admin",
+    }, {
+      db: pool,
+      env: { ISOLATED_WORKSPACE_MODE: "true", CODER_WRITE_ENABLED: "true" },
+    });
+    assert.equal(retried.alreadyCompleted, true);
+    assert.equal(retried.reconciliationRequired, false);
+  });
+
+  test("finalization reconciliation requires observed canonical ref and incident evidence", async () => {
+    const source = fs.mkdtempSync(path.join(os.tmpdir(), "phase16-reconcile-source-"));
+    const bare = fs.mkdtempSync(path.join(os.tmpdir(), "phase16-reconcile-bare-"));
+    const candidateRepository = fs.mkdtempSync(path.join(os.tmpdir(), "phase16-reconcile-candidate-"));
+    temporaryPaths.push(source, bare, candidateRepository);
+    git(source, "init", "--quiet");
+    git(source, "config", "user.name", "Phase 16 Reconcile Test");
+    git(source, "config", "user.email", "reconcile@example.invalid");
+    fs.writeFileSync(path.join(source, "reconcile.txt"), "base\n");
+    git(source, "add", "reconcile.txt");
+    git(source, "commit", "--quiet", "-m", "base");
+    const base = git(source, "rev-parse", "HEAD");
+    execFileSync("git", ["init", "--bare", "--quiet", bare]);
+    git(source, "push", "--quiet", bare, "HEAD:refs/heads/main");
+    fs.rmSync(candidateRepository, { recursive: true, force: true });
+    execFileSync("git", ["clone", "--quiet", source, candidateRepository]);
+    git(candidateRepository, "config", "user.name", "Phase 16 Candidate");
+    git(candidateRepository, "config", "user.email", "candidate@example.invalid");
+    fs.writeFileSync(path.join(candidateRepository, "reconcile.txt"), "candidate\n");
+    git(candidateRepository, "add", "reconcile.txt");
+    git(candidateRepository, "commit", "--quiet", "-m", "candidate");
+    const candidateSha = git(candidateRepository, "rev-parse", "HEAD");
+
+    const taskId = "TASK-PHASE16-RECONCILE-FINALIZER";
+    const isolatedWorkspaceId = "iw-phase16-reconcile-finalizer";
+    const isolatedWorkspaceKey = "isolated:phase16-reconcile-finalizer";
+    const canonicalWorkspaceKey = "canonical:phase16-reconcile-finalizer";
+    await createTask(taskId);
+    const writeLease = await leaseService.acquireLease({
+      workspaceId: isolatedWorkspaceKey,
+      ownerInstanceId: "worker",
+      ownerTaskId: taskId,
+      ownerOperationId: "reconcile-workspace-operation",
+      mode: "WRITE_EXCLUSIVE",
+      ttlMs: 30_000,
+    }, { db: pool });
+    await pool.query(
+      `INSERT INTO isolated_workspaces(
+         id, task_id, workspace_id, lease_id, lease_owner_operation_id,
+         canonical_repository_path, workspace_path, base_commit_sha, candidate_commit_sha, status
+       ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, 'CANDIDATE_READY')`,
+      [
+        isolatedWorkspaceId, taskId, isolatedWorkspaceKey, writeLease.lease_id,
+        writeLease.lease_owner_operation_id, bare, candidateRepository, base, candidateSha,
+      ]
+    );
+    const candidateArtifact = artifactService.buildCandidateArtifact({
+      repositoryRoot: candidateRepository,
+      taskId,
+      baseCommitSha: base,
+      candidateCommitSha: candidateSha,
+      contextManifestHash: HASH_B,
+    });
+    const artifact = await artifactService.storeCandidateArtifact({
+      artifactId: "artifact-phase16-reconcile-finalizer",
+      taskId,
+      workspaceId: isolatedWorkspaceKey,
+      isolatedWorkspaceId,
+      createdBy: "worker",
+      candidateArtifact,
+    }, { db: pool });
+    const finalizerLease = await leaseService.acquireLease({
+      workspaceId: canonicalWorkspaceKey,
+      ownerInstanceId: "gate-admin",
+      ownerTaskId: taskId,
+      ownerOperationId: "reconcile-finalizer-operation",
+      mode: "FINALIZE_EXCLUSIVE",
+      ttlMs: 30_000,
+    }, { db: pool });
+    const approval = await approvalService.openBoundApproval({
+      taskId,
+      requestedBy: "worker",
+      artifactId: artifact.id,
+      artifactHash: artifact.artifact_hash,
+      contextManifestHash: artifact.context_manifest_hash,
+      baseCommitSha: base,
+      candidateCommitSha: candidateSha,
+      workspaceId: canonicalWorkspaceKey,
+      leaseOwnerOperationId: finalizerLease.lease_owner_operation_id,
+      fencingToken: finalizerLease.fencing_token,
+      delegationScope: { allowedActorIds: ["gate-admin"], allowedTargetRefs: ["refs/heads/main"] },
+      expectedTaskState: "READY_FOR_COMMIT",
+      expectedTaskVersion: 0,
+      expiresAt: new Date(Date.now() + 60_000),
+    }, { db: pool });
+    await approvalService.resolveBoundApproval({
+      approvalId: approval.id,
+      artifactId: artifact.id,
+      artifactHash: artifact.artifact_hash,
+      contextManifestHash: artifact.context_manifest_hash,
+      baseCommitSha: base,
+      candidateCommitSha: candidateSha,
+      approved: true,
+      resolvedBy: "operator",
+    }, { db: pool });
+    const claim = await finalizerService.claimFinalization({
+      finalizationId: "finalization-phase16-reconcile",
+      approvalId: approval.id,
+      artifactId: artifact.id,
+      workspaceId: canonicalWorkspaceKey,
+      leaseId: finalizerLease.lease_id,
+      ownerOperationId: finalizerLease.lease_owner_operation_id,
+      fencingToken: finalizerLease.fencing_token,
+      baseCommitSha: base,
+      candidateCommitSha: candidateSha,
+      artifactHash: artifact.artifact_hash,
+      contextManifestHash: artifact.context_manifest_hash,
+      targetRef: "refs/heads/main",
+      actorId: "gate-admin",
+    }, { db: pool });
+    git(bare, "fetch", "--quiet", candidateRepository, candidateSha);
+    git(bare, "update-ref", "refs/heads/main", candidateSha, base);
+    await finalizerService.completeFinalization({
+      finalizationId: claim.id,
+      claimToken: claim.claim_token,
+      status: "NEEDS_RECONCILIATION",
+      integratedCommitSha: candidateSha,
+      errorMessage: "simulated DB terminal uncertainty",
+      actorId: "gate-admin",
+    }, { db: pool });
+
+    const plan = await reconciliationService.reconcileFinalization({
+      finalizationId: claim.id,
+      expectedStatus: "NEEDS_RECONCILIATION",
+      terminalStatus: "SUCCEEDED",
+      actorId: "gate-admin",
+      apply: false,
+    }, { db: pool });
+    assert.equal(plan.recommendedAction, "MARK_SUCCEEDED");
+    await assert.rejects(
+      reconciliationService.reconcileFinalization({
+        finalizationId: claim.id,
+        expectedStatus: "NEEDS_RECONCILIATION",
+        terminalStatus: "SUCCEEDED",
+        actorId: "gate-admin",
+        incidentEvidence: {},
+        apply: true,
+      }, { db: pool }),
+      /incident evidence requires/
+    );
+    const reconciled = await reconciliationService.reconcileFinalization({
+      finalizationId: claim.id,
+      expectedStatus: "NEEDS_RECONCILIATION",
+      terminalStatus: "SUCCEEDED",
+      actorId: "gate-admin",
+      incidentEvidence: { incidentId: "INC-PHASE16-TEST", rationale: "ref equals approved candidate" },
+      apply: true,
+    }, { db: pool });
+    assert.equal(reconciled.result.status, "SUCCEEDED");
+    const event = await pool.query(
+      `SELECT event_type FROM workspace_safety_events
+       WHERE finalization_id = $1 AND event_type = 'FINALIZATION_RECONCILED_SUCCEEDED'`,
+      [claim.id]
+    );
+    assert.equal(event.rows.length, 1);
   });
 
   test("task control records cancel intent before kill and reconciles dead owners", async () => {
@@ -622,6 +1013,8 @@ if (!enabled) {
   });
 
   test("017 rolls back without removing legacy task and approval data, then reapplies", async () => {
+    await migrateDown("017_workspace_safety_rework", { pool, allowDestructive: true });
+    reworkMigrationApplied = false;
     await migrateDown("017_workspace_safety", { pool, allowDestructive: true });
     migrationApplied = false;
     const boundary = await pool.query(
@@ -638,7 +1031,9 @@ if (!enabled) {
     assert.equal(boundary.rows[0].leases_table, null);
     assert.equal(boundary.rows[0].has_control_state, false);
     await migrateUp("017_workspace_safety", { pool });
+    await migrateUp("017_workspace_safety_rework", { pool });
     migrationApplied = true;
+    reworkMigrationApplied = true;
     const reapplied = await pool.query(`SELECT to_regclass('public.workspace_leases') AS leases_table`);
     assert.equal(reapplied.rows[0].leases_table, "workspace_leases");
   });

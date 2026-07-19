@@ -1,7 +1,7 @@
 const fs = require("fs");
 const path = require("path");
 const defaultDb = require("../db");
-const { assertIsolatedWriteEnabled } = require("./featureFlags");
+const { assertIsolatedWriteEnabled, assertPhase16WriteEnabled } = require("./featureFlags");
 const { DEFAULT_ISOLATED_ROOT } = require("./isolatedWorkspaceService");
 
 const WRITE_CAPABLE_AGENTS = Object.freeze(new Set(["coder", "codex", "qa"]));
@@ -45,6 +45,7 @@ async function assertRegisteredAgentWorkspace(
   }
   let rows;
   try {
+    await assertPhase16WriteEnabled({ db, env });
     ({ rows } = await db.query(
       `SELECT w.id, w.workspace_id, w.lease_owner_operation_id, l.fencing_token
        FROM isolated_workspaces w

@@ -139,13 +139,26 @@ function describeCandidateArtifact(candidateArtifact) {
   if (summary.binaryFiles > 0) riskSignals.push("CHANGES_BINARY_FILES");
   if (summary.changedFileCount > 20) riskSignals.push("LARGE_FILE_SET");
   if ((summary.additions || 0) + (summary.deletions || 0) > 1000) riskSignals.push("LARGE_DIFF");
+  const changedPaths = files.map((file) => file.path);
+  if (changedPaths.some((filePath) => /(^|\/)\.env(?:\.|$)|\.(?:pem|key)$/i.test(filePath))) {
+    riskSignals.push("CHANGES_SENSITIVE_PATHS");
+  }
+  if (changedPaths.some((filePath) => /(^|\/)migrations?\//i.test(filePath))) {
+    riskSignals.push("CHANGES_DATABASE_MIGRATION");
+  }
+  if (changedPaths.some((filePath) => filePath.startsWith(".github/workflows/"))) {
+    riskSignals.push("CHANGES_CI_WORKFLOW");
+  }
+  if (changedPaths.some((filePath) => /(^|\/)(?:package-lock\.json|pnpm-lock\.yaml|yarn\.lock|Cargo\.lock|poetry\.lock)$/.test(filePath))) {
+    riskSignals.push("CHANGES_DEPENDENCY_LOCK");
+  }
   return {
     artifactHash,
     diffHash,
     contextManifestHash: manifest.contextManifestHash,
     baseCommitSha: manifest.baseCommitSha,
     candidateCommitSha: manifest.candidateCommitSha,
-    changedPaths: files.map((file) => file.path),
+    changedPaths,
     summary,
     riskSignals,
   };

@@ -6,3 +6,5 @@
 4. 기존 `workspace_locks`는 legacy runtime 호환을 위해 남아 있다. Phase 16 artifact finalization 권한으로 해석하면 안 된다.
 5. Git ref 변경과 PostgreSQL transaction은 하나의 원자 transaction이 될 수 없다. ref 변경 후 DB 장애는 `NEEDS_RECONCILIATION`과 runbook으로 다룬다.
 6. Gate 전에는 Coder/QA 실행이 차단된다. `ISOLATED_WORKSPACE_MODE=false`가 canonical direct-write 호환 모드라는 의미가 아니다.
+7. Phase 16 write mode에서는 기존 인자 없는 `!approve`의 canonical commit 경로와 legacy Coder 경로를 사용하지 않는다. `!dev implement TASK-ID`와 `!release approve APPROVAL-ID`가 enforced 경로다. Phase 17에서 durable role workflow가 이 경로를 자동 orchestration한다.
+8. `PHASE16_ALLOWED_PATHS=**`는 전체 repository scope다. 운영에서는 가능한 한 `src/**,test/**`처럼 task별 범위를 좁혀야 한다.

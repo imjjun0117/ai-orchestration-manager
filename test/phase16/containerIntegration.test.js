@@ -48,6 +48,7 @@ if (!enabled) {
       cpus: 1,
       pidsLimit: 128,
     }, {
+      db: { query: async () => ({ rows: [{ id: "phase-16", status: "ACCEPTED" }] }) },
       env: {
         ISOLATED_WORKSPACE_MODE: "true",
         CODER_WRITE_ENABLED: "true",

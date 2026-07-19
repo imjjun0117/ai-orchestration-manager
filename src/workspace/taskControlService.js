@@ -184,9 +184,51 @@ async function reconcileOrphanedTaskProcesses(
   return outcomes;
 }
 
+async function inspectTaskProcesses(
+  {},
+  { db = defaultDb, processApi = processService, hostId = hostIdentity.getHostId() } = {}
+) {
+  const { rows } = await db.query(
+    `SELECT * FROM tasks
+     WHERE current_pid IS NOT NULL
+       AND current_host_id = $1
+       AND control_state IN ('RUNNING', 'PAUSED', 'CANCEL_REQUESTED')
+     ORDER BY id`,
+    [hostId]
+  );
+  return rows.map((task) => {
+    try {
+      const alive = task.current_pgid && process.platform !== "win32"
+        ? processApi.isProcessGroupAlive(task.current_pgid)
+        : processApi.isProcessAlive(task.current_pid);
+      return {
+        taskId: task.id,
+        rowVersion: Number(task.row_version),
+        controlState: task.control_state,
+        pid: task.current_pid,
+        pgid: task.current_pgid,
+        alive,
+        recommendedAction: alive ? "NO_ACTION" : "MARK_NEEDS_RECONCILIATION",
+      };
+    } catch (error) {
+      return {
+        taskId: task.id,
+        rowVersion: Number(task.row_version),
+        controlState: task.control_state,
+        pid: task.current_pid,
+        pgid: task.current_pgid,
+        alive: null,
+        recommendedAction: "MANUAL_INSPECTION",
+        error: error.message,
+      };
+    }
+  });
+}
+
 module.exports = {
   assertLocalProcessOwnership,
   getTaskForControl,
+  inspectTaskProcesses,
   killTaskProcess,
   pauseTaskProcess,
   reconcileOrphanedTaskProcesses,

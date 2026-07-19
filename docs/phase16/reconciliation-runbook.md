@@ -20,6 +20,18 @@ DB의 `workspace_safety_events`, `workspace_finalizations`, `workspace_leases`, 
 - candidate workspace에서 `git status`, `git rev-parse HEAD`, artifact 존재 여부를 확인한다.
 - side effect가 없다고 증명된 경우에만 새 operation ID와 새 lease로 재실행한다.
 
+먼저 dry-run으로 확인하고, 적용 시 request 파일과 `--apply`를 모두 요구한다.
+
+```json
+{"actorId":"gate-admin","apply":false}
+```
+
+```bash
+npm run phase16 -- reconcile-processes process-reconcile.json
+# 확인 후 JSON의 apply를 true로 바꾸고:
+npm run phase16 -- reconcile-processes process-reconcile.json --apply
+```
+
 ## 3. Orphan workspace
 
 `reconcile-list`의 각 항목에 대해 다음을 확인한다.
@@ -31,6 +43,24 @@ DB의 `workspace_safety_events`, `workspace_finalizations`, `workspace_leases`, 
 5. 보존이 필요하면 incident용 read-only archive를 만들고, 아니면 owner-aware cleanup 실행
 
 경로가 canonical repository 또는 isolation root 밖이면 자동 삭제하지 않고 security incident로 분류한다.
+
+```json
+{
+  "isolatedWorkspaceId":"iw-...",
+  "expectedStatus":"NEEDS_RECONCILIATION",
+  "actorId":"gate-admin",
+  "incidentEvidence":{"incidentId":"INC-2026-001","rationale":"owner process is gone and candidate was archived"},
+  "apply":false
+}
+```
+
+```bash
+npm run phase16 -- reconcile-workspace workspace-reconcile.json
+# 출력의 path/status/action을 확인하고 JSON apply=true로 변경한 뒤:
+npm run phase16 -- reconcile-workspace workspace-reconcile.json --apply
+```
+
+path가 이미 없으면 DB row, lease release, append-only event가 한 transaction에서 정리된다. path가 있으면 configured isolation root를 다시 검증한 owner-aware cleanup만 실행한다.
 
 ## 4. Finalizer reconciliation
 
@@ -48,6 +78,25 @@ DB의 `workspace_safety_events`, `workspace_finalizations`, `workspace_leases`, 
 - ref가 base/candidate 어느 것도 아니면 외부 변경으로 간주하고 자동 진행을 중단한다.
 
 관리자 보정은 사유, 확인자, before/after ref, artifact hash를 append-only incident evidence에 남긴다.
+
+```json
+{
+  "finalizationId":"finalization-...",
+  "expectedStatus":"NEEDS_RECONCILIATION",
+  "terminalStatus":"SUCCEEDED",
+  "actorId":"gate-admin",
+  "incidentEvidence":{"incidentId":"INC-2026-002","rationale":"bare canonical ref equals the approved candidate"},
+  "apply":false
+}
+```
+
+```bash
+npm run phase16 -- reconcile-finalization finalization-reconcile.json
+# observedRefSha가 candidate와 정확히 같은지 확인하고 JSON apply=true로 변경한 뒤:
+npm run phase16 -- reconcile-finalization finalization-reconcile.json --apply
+```
+
+서비스는 bare canonical ref를 직접 재계산한다. `SUCCEEDED`는 observed ref가 approved candidate일 때만, `FAILED`는 ref가 approved base일 때만 허용한다. DB procedure도 expected status CAS와 incident evidence를 재검증한다.
 
 ## 5. Kill 직후
 

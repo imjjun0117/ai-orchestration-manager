@@ -23,12 +23,12 @@ Worker verification:
 
 This status file and the sealed manifest are attestation metadata and are intentionally outside the candidate bundle to avoid a circular self-hash. They may be committed after the candidate commit without changing the candidate tree.
 
-Current Gate state:
+Round 1 Gate result:
 
 - DB submission: `phase16-submission-round-1`, `SEALED`
-- Phase status: `VALIDATION_IN_PROGRESS`
-- Phase row version: `2`
-- Planning validation: `PENDING`
-- Development validation: `PENDING`
+- Planning validation: `CHANGES_REQUESTED`
+- Signed planning evidence hash: `sha256:2475c167ca7a670176c79bd3d55078bd532a2339fff158ab6042153a1254ef4b`
+- Phase status after worker rework start: `REWORK_IN_PROGRESS`
+- Phase row version: `5`
 
-The next operation is independent planning and development validation against the exact sealed submission and bundle hash above. `CODER_WRITE_ENABLED` must remain disabled until both verdicts are accepted by the Gate.
+Round 1은 변경하지 않고 보존한다. worker는 additive migration과 runtime/CLI/Discord wiring을 포함하는 새 candidate/manifest로 Round 2 submission을 생성한다. `CODER_WRITE_ENABLED`는 Round 2의 두 독립 검증과 Gate 수락 전까지 계속 비활성 상태여야 한다.

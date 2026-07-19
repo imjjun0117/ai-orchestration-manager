@@ -35,6 +35,11 @@ const { askGemini } = require("./agents/gemini");
 const { askGemma } = require("./agents/gemma");
 const DiscordAdapter = require("./src/channels/discordAdapter");
 const channelCredentialService = require("./src/channels/channelCredentialService");
+const appDb = require("./src/db");
+const { formatBoundApproval } = require("./src/workspace/approvalDisplay");
+const taskControlService = require("./src/workspace/taskControlService");
+const workspaceWorkflowService = require("./src/workspace/taskWorkspaceWorkflowService");
+const { assertPhase16WriteEnabled, coderWriteEnabled, isolatedWorkspaceMode } = require("./src/workspace/featureFlags");
 
 function sanitizeInstanceId(value) {
   return String(value || "default").trim().replace(/[^a-zA-Z0-9_.-]/g, "_").slice(0, 64) || "default";
@@ -111,6 +116,26 @@ let currentWorkspaceDir = DEFAULT_WORKSPACE_DIR;
 // 현재 워크스페이스 디렉토리를 반환
 function getWorkspaceDir() {
   return currentWorkspaceDir;
+}
+
+function phase16WriteRequested() {
+  return isolatedWorkspaceMode(process.env) || coderWriteEnabled(process.env);
+}
+
+function phase16CanonicalRepository() {
+  const configured = String(process.env.PHASE16_CANONICAL_BARE_REPOSITORY || "").trim();
+  if (!configured) {
+    throw new Error("PHASE16_CANONICAL_BARE_REPOSITORY must point to the prepared bare canonical repository");
+  }
+  return path.resolve(configured);
+}
+
+async function canonicalTargetSha(repositoryRoot, targetRef = "refs/heads/main") {
+  const { stdout } = await runCommand("git", ["rev-parse", "--verify", `${targetRef}^{commit}`], {
+    cwd: repositoryRoot,
+    trusted: true,
+  });
+  return stdout.trim();
 }
 
 // 디렉토리가 없으면 생성하고, git 저장소가 아니면 초기화한다.
@@ -291,13 +316,18 @@ function buildHelpGuide() {
     "**승인 파이프라인 명령**\n" +
     "`!task 작업 내용` - Claude Manager가 요구사항을 분석하고 계획을 만듭니다.\n" +
     "`!autotask 작업 내용` - PM 자동 루프가 계획, 구현, 리뷰, QA, 최종 요약까지 연속 진행합니다.\n" +
-    "`!approve` - 현재 대기 중인 승인 단계를 진행합니다. 계획 승인, Codex 구현 승인, Gemini 리뷰 승인, 최종 커밋 승인에 모두 사용합니다.\n" +
+    "`!approve` - legacy read/review 단계 승인을 진행합니다. Phase 16 candidate 반영은 반드시 `!release approve APPROVAL-ID`를 사용합니다.\n" +
     "`!reject` - 현재 대기 중인 작업을 반려합니다. 코드 변경 단계 이후에는 git 변경사항 롤백을 시도합니다.\n" +
     "`!skip` - Gemini가 revise를 요구한 상태에서 재수정을 건너뛰고 QA/최종 요약 단계로 진행합니다.\n" +
     "`!end` - 진행 중인 task를 현재 안전 체크포인트에서 일시중지합니다.\n" +
     "`!resume TASK-ID` - PAUSED task를 저장된 상태에서 재개합니다.\n" +
-    "`!kill TASK-ID` - 현재 실행 중인 CLI 프로세스를 종료하고 사람 판단 상태로 전환합니다.\n" +
+    "`!kill TASK-ID` - CANCEL_REQUESTED를 먼저 기록하고 현재 실행 중인 process group을 안전하게 종료합니다.\n" +
     "`!status` - 현재 채널의 진행 중인 task 상태, 라운드, 다음 approve 동작을 확인합니다.\n\n" +
+    "**Phase 16 격리 쓰기 명령**\n" +
+    "`!dev implement TASK-ID [instruction]` - 승인된 task를 격리 clone에서 구현하고 bound candidate approval을 만듭니다.\n" +
+    "`!release approval TASK-ID` - commit/path/diff/risk/hash/expiry/finalizer scope를 표시합니다.\n" +
+    "`!release approve APPROVAL-ID` - 표시된 exact candidate만 bare canonical ref에 반영합니다.\n" +
+    "`!release reject APPROVAL-ID` - candidate를 반려하고 격리 workspace를 정리합니다.\n\n" +
     "**프로젝트/검증 명령**\n" +
     "`!instance` - 현재 응답한 봇 인스턴스 ID, prefix, PID, workspace를 확인합니다.\n" +
     "`!lock` - 현재 workspace DB 전역 락 보유 상태를 확인합니다.\n" +
@@ -645,6 +675,12 @@ async function runRoleCommand(message, role, prompt) {
 // job 실행 중인 컨텍스트여야 한다.
 // skippedRevision: !skip으로 Gemini의 수정 요청을 건너뛰고 도달한 경우 true
 async function finalizeAfterReview(message, task, skippedRevision) {
+  if (phase16WriteRequested()) {
+    throw new Error(
+      `legacy canonical finalization is disabled in Phase 16 write mode; use ` +
+      `\`!dev implement ${task.id} [instruction]\` to create an isolated bound candidate`
+    );
+  }
   const gemmaMsg = await message.reply("🔄 **[Gemma]** 최종 변경사항을 요약하고 있습니다...");
   let gemmaResponse = "";
   let diff = "";
@@ -861,6 +897,196 @@ channelAdapter.onMessage(async (message) => {
     return;
   }
 
+  // Phase 16 enforced path: a planned task is implemented only in a registered
+  // isolated clone, then converted into an immutable, artifact-bound approval.
+  if (content === "!implement" || content.startsWith("!implement ")) {
+    if (BOT_INSTANCE_ID !== "worker") {
+      await message.reply(`⚠️ 구현 명령은 Developer 봇에서 실행하세요: \`!dev implement TASK-ID [instruction]\``);
+      return;
+    }
+    const raw = content.substring("!implement".length).trim();
+    const separator = raw.indexOf(" ");
+    const taskId = separator < 0 ? raw : raw.slice(0, separator);
+    const instruction = separator < 0 ? "승인된 계획을 격리 workspace에서 구현하세요." : raw.slice(separator + 1).trim();
+    if (!taskId) {
+      await message.reply("사용법: `!dev implement TASK-ID [instruction]`");
+      return;
+    }
+    if (!phase16WriteRequested()) {
+      await message.reply("⚠️ Phase 16 write mode가 비활성화되어 있습니다. Gate 수락 후 두 write flag를 활성화해야 합니다.");
+      return;
+    }
+    await worker.enqueue(
+      async () => runWithWorkspaceLock(message, { label: `phase16-implement:${taskId}`, taskId }, async () => {
+        let codingTask = null;
+        const progress = await message.reply(`🔒 **${taskId}** 격리 workspace를 준비하고 있습니다...`);
+        try {
+          await assertPhase16WriteEnabled({ db: appDb, env: process.env });
+          const task = await taskService.getTask(taskId);
+          if (!task) throw new Error(`task ${taskId} does not exist`);
+          if (task.status !== "PENDING_PLAN_APPROVAL") {
+            throw new Error(`task must be PENDING_PLAN_APPROVAL (current: ${task.status})`);
+          }
+          const planApproval = await approvalService.resolvePendingAction(
+            task.id,
+            "plan_approval",
+            { approved: true, resolvedBy: message.author.username }
+          );
+          if (!planApproval) throw new Error("pending plan approval does not exist or was already resolved");
+          codingTask = await workspaceWorkflowService.transitionTaskState({
+            taskId: task.id,
+            expectedState: task.status,
+            expectedVersion: Number(task.row_version),
+            nextState: "CODING",
+            currentAgent: "coder",
+          });
+          const canonicalRepository = phase16CanonicalRepository();
+          const targetRef = process.env.PHASE16_TARGET_REF || "refs/heads/main";
+          const baseCommitSha = await canonicalTargetSha(canonicalRepository, targetRef);
+          const allowedPaths = String(process.env.PHASE16_ALLOWED_PATHS || "**")
+            .split(",")
+            .map((value) => value.trim())
+            .filter(Boolean);
+          await progress.edit(`🧰 **${taskId}** Developer를 격리 workspace에서 실행하고 있습니다...`);
+          const stage = await workspaceWorkflowService.runCoderStage({
+            taskId: task.id,
+            expectedTaskState: codingTask.status,
+            expectedTaskVersion: Number(codingTask.row_version),
+            canonicalRepository,
+            baseCommitSha,
+            ownerInstanceId: BOT_INSTANCE_ID,
+            originalRequest: task.original_request,
+            plan: task.plan,
+            instruction,
+            allowedPaths,
+            allowedTools: ["codex"],
+            riskLevel: task.risk_level,
+            constraints: {
+              maxChangedFiles: Number(process.env.PHASE16_MAX_CHANGED_FILES || 100),
+              maxDiffLines: Number(process.env.PHASE16_MAX_DIFF_LINES || 5000),
+            },
+            shadowMode: false,
+          }, {
+            runCoder: async ({ cwd }) => askCodex(
+              await contextBuilder.buildCoderContext(task, { instruction, cwd }),
+              { cwd, taskId: task.id }
+            ),
+          });
+          await agentResultService.saveResult({
+            taskId: task.id,
+            agentName: "coder",
+            resultType: "code_diff",
+            content: stage.result,
+            modelName: "codex",
+          });
+          const approvalTask = await workspaceWorkflowService.transitionTaskState({
+            taskId: task.id,
+            expectedState: codingTask.status,
+            expectedVersion: Number(codingTask.row_version),
+            nextState: "PENDING_COMMIT_APPROVAL",
+            currentAgent: "release-manager",
+          });
+          const prepared = await workspaceWorkflowService.prepareCandidateApproval({
+            taskId: task.id,
+            expectedTaskState: approvalTask.status,
+            expectedTaskVersion: Number(approvalTask.row_version),
+            requestedBy: BOT_INSTANCE_ID,
+            finalizerActorId: "gate-admin",
+            targetRef,
+            commitMessage: `task: ${task.title}`,
+          });
+          await progress.edit(`✅ **${taskId}** 격리 구현과 candidate 생성이 완료됐습니다.`);
+          await sendLongMessage(message, stage.result, false);
+          await sendLongMessage(message, formatBoundApproval(prepared.display), false);
+        } catch (error) {
+          logger.error("Phase 16 isolated implementation failed", error);
+          if (codingTask) {
+            const latest = await taskService.getTask(codingTask.id).catch(() => null);
+            if (latest && !["DONE", "REJECTED", "CANCELLED"].includes(latest.status)) {
+              await workspaceWorkflowService.transitionTaskState({
+                taskId: latest.id,
+                expectedState: latest.status,
+                expectedVersion: Number(latest.row_version),
+                nextState: "NEEDS_RECONCILIATION",
+                currentAgent: "release-manager",
+              }).catch(() => {});
+            }
+          }
+          await progress.edit(`❌ 격리 구현 실패: ${truncateForStatus(error.message)}`);
+        }
+      }),
+      {
+        onQueued: (n) => notifyIfQueued(message.channel, n),
+        label: `phase16-implement:${taskId}`,
+        onWatchdog: (info) => notifyIfWatchdog(message.channel, info),
+      }
+    );
+    return;
+  }
+
+  if (content === "!approval" || content.startsWith("!approval ")) {
+    const value = content.substring("!approval".length).trim();
+    let display;
+    if (/^[1-9]\d*$/.test(value)) {
+      display = await approvalService.getBoundApprovalDisplay({ approvalId: Number(value) });
+    } else {
+      const taskId = value || (await taskService.getActiveTaskForChannel(message.channel.id))?.id;
+      if (!taskId) {
+        await message.reply("사용법: `!release approval TASK-ID` 또는 `!release approval APPROVAL-ID`");
+        return;
+      }
+      display = await approvalService.getBoundApprovalDisplay({ taskId });
+    }
+    await sendLongMessage(message, formatBoundApproval(display), false);
+    return;
+  }
+
+  if (/^!approve\s+[1-9]\d*$/.test(content)) {
+    if (BOT_INSTANCE_ID !== "gate-admin") {
+      await message.reply("⚠️ bound candidate 승인은 Release Manager 봇에서 실행하세요: `!release approve APPROVAL-ID`");
+      return;
+    }
+    const approvalId = Number(content.split(/\s+/)[1]);
+    await worker.enqueue(async () => {
+      const progress = await message.reply(`🔐 approval #${approvalId}의 exact hash binding을 재검증하고 있습니다...`);
+      try {
+        const result = await workspaceWorkflowService.finalizeApprovedCandidate({
+          approvalId,
+          resolvedBy: `discord:${message.author.id}`,
+          actorId: BOT_INSTANCE_ID,
+        });
+        if (result.reconciliationRequired) {
+          await progress.edit(`⚠️ candidate는 반영됐지만 후처리 reconciliation이 필요합니다. finalization=${result.finalization.id}`);
+        } else {
+          await progress.edit(`✅ candidate 반영 완료: \`${result.finalization.integrated_commit_sha}\``);
+        }
+      } catch (error) {
+        logger.error("Phase 16 bound approval finalization failed", error);
+        await progress.edit(`❌ 승인/finalization 실패: ${truncateForStatus(error.message)}`);
+      }
+    }, { label: `phase16-approve:${approvalId}` });
+    return;
+  }
+
+  if (/^!reject\s+[1-9]\d*$/.test(content)) {
+    if (BOT_INSTANCE_ID !== "gate-admin") {
+      await message.reply("⚠️ bound candidate 반려는 Release Manager 봇에서 실행하세요: `!release reject APPROVAL-ID`");
+      return;
+    }
+    const approvalId = Number(content.split(/\s+/)[1]);
+    try {
+      await workspaceWorkflowService.rejectCandidateApproval({
+        approvalId,
+        resolvedBy: `discord:${message.author.id}`,
+        reason: "rejected from Discord bound approval",
+      });
+      await message.reply(`❌ approval #${approvalId} candidate를 반려하고 격리 workspace를 정리했습니다.`);
+    } catch (error) {
+      await message.reply(`❌ candidate 반려 실패: ${truncateForStatus(error.message)}`);
+    }
+    return;
+  }
+
   // 2. !status (이 채널에 진행 중인 레거시 파이프라인 태스크 상태 조회, DB 기반)
   if (content === "!status") {
     logger.info(`status command received from ${message.author.tag}`);
@@ -881,6 +1107,11 @@ channelAdapter.onMessage(async (message) => {
       statusMsg += "자동 파이프라인이 완료되어 최종 승인 대기 중입니다. `!approve`로 커밋하거나 `!reject`로 롤백할 수 있습니다.\n";
     } else if (task.status === "PM_ESCALATION") {
       statusMsg += "PM 자동 루프가 사람 판단을 요청한 상태입니다. task thread와 `!log TASK-ID`를 확인하세요.\n";
+    } else if (task.status === "NEEDS_RECONCILIATION") {
+      statusMsg += "자동 진행이 차단됐습니다. `npm run phase16 -- reconcile-list`로 process/workspace/finalizer evidence를 확인하세요.\n";
+    } else if (task.status === "PENDING_COMMIT_APPROVAL") {
+      const bound = await approvalService.getBoundApprovalDisplay({ taskId: task.id, pendingOnly: true });
+      if (bound) statusMsg += `Bound candidate approval #${bound.approvalId} 대기 중입니다. \`!release approval ${task.id}\`로 상세를 확인하세요.\n`;
     }
     await message.reply(statusMsg);
     return;
@@ -897,6 +1128,22 @@ channelAdapter.onMessage(async (message) => {
     }
 
     await appendTaskCommandLog(task, message, "!end (task 일시중지 요청)");
+
+    if (task.current_pid) {
+      try {
+        const paused = await taskControlService.pauseTaskProcess({
+          taskId: task.id,
+          expectedVersion: Number(task.row_version),
+          ownerInstanceId: BOT_INSTANCE_ID,
+          actorId: `discord:${message.author.id}`,
+        });
+        await appendTaskSystemLog(paused, message, "process group을 중지하고 row-version CAS로 PAUSED 전환했습니다.");
+        await message.reply(`⏸️ **${task.id}** process group 일시중지 완료. 재개: \`!resume ${task.id}\``);
+      } catch (error) {
+        await message.reply(`❌ 안전 일시중지 실패: ${truncateForStatus(error.message)}`);
+      }
+      return;
+    }
 
     if (DEFERRED_PAUSE_STATUSES.has(task.status)) {
       const updated = await taskService.requestPause(task.id);
@@ -927,6 +1174,23 @@ channelAdapter.onMessage(async (message) => {
     }
     if (pausedTask.status !== "PAUSED") {
       await message.reply(`⚠️ \`${taskId}\` 는 PAUSED 상태가 아닙니다. 현재 상태: \`${pausedTask.status}\``);
+      return;
+    }
+
+    if (pausedTask.current_pid) {
+      try {
+        const resumed = await taskControlService.resumeTaskProcess({
+          taskId,
+          expectedVersion: Number(pausedTask.row_version),
+          ownerInstanceId: BOT_INSTANCE_ID,
+          actorId: `discord:${message.author.id}`,
+        });
+        await appendTaskCommandLog(resumed, message, `!resume ${taskId} (process group 재개)`);
+        await appendTaskSystemLog(resumed, message, `process group을 재개하고 ${resumed.status} 상태로 복원했습니다.`);
+        await message.reply(`▶️ **${taskId}** process group 재개 완료. 상태: \`${resumed.status}\``);
+      } catch (error) {
+        await message.reply(`❌ 안전 재개 실패: ${truncateForStatus(error.message)}`);
+      }
       return;
     }
 
@@ -966,7 +1230,7 @@ channelAdapter.onMessage(async (message) => {
 	    return;
 	  }
 
-  // 2.07 !kill TASK-ID - 현재 실행 중인 CLI 프로세스를 종료하고 PM_ESCALATION으로 전환한다.
+  // 2.07 !kill TASK-ID - cancel intent를 DB에 선기록한 뒤 process group을 종료한다.
   if (content === "!kill" || content.startsWith("!kill ")) {
     const taskId = content.substring("!kill".length).trim();
     if (!taskId) {
@@ -984,49 +1248,21 @@ channelAdapter.onMessage(async (message) => {
       await message.reply(`ℹ️ \`${taskId}\` 에 기록된 실행 중 PID가 없습니다.`);
       return;
     }
-    if (task.current_host_id && task.current_host_id !== HOST_INSTANCE_ID) {
-      await message.reply(
-        `⚠️ \`${taskId}\` 의 실행 프로세스는 다른 host에서 시작되었습니다.\n` +
-        `현재 host: \`${HOST_INSTANCE_ID}\`, process host: \`${task.current_host_id}\`\n` +
-        "원격 host 프로세스는 이 인스턴스에서 직접 종료할 수 없습니다."
-      );
-      return;
-    }
-
     await appendTaskCommandLog(task, message, `!kill ${taskId} (PID ${task.current_pid}, PGID ${task.current_pgid || "-"} 종료 요청)`);
 
     try {
-      const result = await processService.killProcessTree({
-        pid: task.current_pid,
-        pgid: task.current_pgid,
-      });
-      if (result.alreadyExited) {
-        const cleaned = await taskService.updateTask(task.id, {
-          current_pid: null,
-          current_pgid: null,
-          current_host_id: null,
-          current_owner_instance_id: null,
-        });
-        await appendTaskSystemLog(cleaned || task, message, `PID ${result.pid}${result.pgid ? ` / PGID ${result.pgid}` : ""}는 이미 종료되어 stale process 정보를 정리했습니다.`);
-        await message.reply(`ℹ️ PID ${result.pid}${result.pgid ? ` / PGID ${result.pgid}` : ""}는 이미 종료되어 \`${task.id}\`의 process 정보를 정리했습니다.`);
-        return;
-      }
-
-      const escalated = await taskService.updateTask(task.id, {
-        status: "PM_ESCALATION",
-        current_agent: "pm",
-        current_pid: null,
-        current_pgid: null,
-        current_host_id: null,
-        current_owner_instance_id: null,
-        next_action: "killed",
+      const result = await taskControlService.killTaskProcess({
+        taskId,
+        expectedVersion: Number(task.row_version),
+        ownerInstanceId: BOT_INSTANCE_ID,
+        actorId: `discord:${message.author.id}`,
       });
       await appendTaskSystemLog(
-        escalated || task,
+        result.task,
         message,
-        `PID ${result.pid}${result.pgid ? ` / PGID ${result.pgid}` : ""} 종료 요청 완료. ${result.usedProcessGroup ? "process group에 " : ""}SIGTERM${result.sigkillSent ? " 후 SIGKILL" : ""}을 전송했고 PM_ESCALATION으로 전환했습니다.`
+        `CANCEL_REQUESTED를 먼저 기록한 뒤 PID ${result.process.pid}${result.process.pgid ? ` / PGID ${result.process.pgid}` : ""} process group을 종료했습니다.`
       );
-      await message.reply(`🛑 **${task.id}** PID ${result.pid}${result.pgid ? ` / PGID ${result.pgid}` : ""} 종료 요청 완료. 상태를 \`PM_ESCALATION\`으로 전환했습니다.`);
+      await message.reply(`🛑 **${task.id}** 종료 완료. 상태: \`CANCELLED\``);
     } catch (err) {
       logger.error("!kill 실행 실패", err);
       await appendTaskSystemLog(task, message, `PID ${task.current_pid}${task.current_pgid ? ` / PGID ${task.current_pgid}` : ""} 종료 실패: ${err.message}`);
@@ -1403,6 +1639,11 @@ channelAdapter.onMessage(async (message) => {
       await statusMsg.delete();
       await sendLongMessage(message, plan);
       await message.channel.send(
+        phase16WriteRequested()
+          ? `🆔 Task: **${task.id}**\n계획을 승인하고 격리 구현을 시작하려면 \`!dev implement ${task.id}\`를 입력하세요.`
+          : `🆔 Task: **${task.id}**\n계획을 승인하고 다음 단계로 진행하려면 \`!approve\`를 입력하세요.`
+      );
+      await message.channel.send(
         matchedSkill
           ? `🧩 선택된 Skill: **${matchedSkill.id}** (위험도: ${matchedSkill.risk_level}) - 이후 Codex/Gemini 프롬프트에 이 skill의 가이드라인이 함께 전달됩니다.`
           : "🧩 매칭되는 Skill 없음 (generic 처리)"
@@ -1452,6 +1693,15 @@ channelAdapter.onMessage(async (message) => {
           return;
         }
         logger.info(`approve command received in state: ${task.status}`);
+
+        if (phase16WriteRequested() && task.status === "PENDING_PLAN_APPROVAL") {
+          await message.reply(`Phase 16 격리 구현을 시작하려면 \`!dev implement ${task.id} [instruction]\`를 사용하세요.`);
+          return;
+        }
+        if (phase16WriteRequested() && ["PENDING_CODEX_APPROVAL", "PENDING_GEMINI_APPROVAL"].includes(task.status)) {
+          await message.reply("❌ Phase 16 write mode에서는 legacy canonical review 파이프라인을 계속할 수 없습니다. 현재 task를 reconciliation/반려한 뒤 격리 경로로 다시 시작하세요.");
+          return;
+        }
 
         // --- 1) 계획 승인 -> Codex 1차 구현 ---
         if (task.status === "PENDING_PLAN_APPROVAL") {
@@ -1667,6 +1917,15 @@ channelAdapter.onMessage(async (message) => {
 
         // --- 5) 레거시 최종 커밋 승인 ---
         if (task.status === "PENDING_COMMIT_APPROVAL") {
+          const bound = await approvalService.getBoundApprovalDisplay({ taskId: task.id, pendingOnly: true });
+          if (bound) {
+            await sendLongMessage(message, formatBoundApproval(bound), false);
+            return;
+          }
+          if (phase16WriteRequested()) {
+            await message.reply("❌ Phase 16 write mode에서는 canonical workspace 직접 commit이 금지됩니다. bound approval을 생성해야 합니다.");
+            return;
+          }
           const resolvedCommit = await approvalService.resolveLatest(task.id, { approved: true, resolvedBy: message.author.username });
           if (!resolvedCommit) {
             await message.reply("⚠️ 이미 처리된 승인입니다. (다른 요청이 먼저 처리했습니다)");
@@ -1756,6 +2015,19 @@ channelAdapter.onMessage(async (message) => {
 
         if (!task) {
           await message.reply("⚠️ 현재 취소할 수 있는 대기 중인 태스크가 없습니다.");
+          return;
+        }
+
+        if (phase16WriteRequested() && task.status === "PENDING_COMMIT_APPROVAL") {
+          const bound = await approvalService.getBoundApprovalDisplay({ taskId: task.id, pendingOnly: true });
+          if (bound) {
+            await sendLongMessage(message, formatBoundApproval(bound), false);
+            return;
+          }
+        }
+        if (phase16WriteRequested()
+            && ["PENDING_CODEX_APPROVAL", "PENDING_GEMINI_APPROVAL", "PENDING_COMMIT_APPROVAL"].includes(task.status)) {
+          await message.reply("❌ Phase 16 write mode에서는 canonical workspace rollback이 금지됩니다. reconciliation 또는 exact bound approval 반려를 사용하세요.");
           return;
         }
 

@@ -2,7 +2,8 @@ const fs = require("fs");
 const path = require("path");
 const { execFile } = require("child_process");
 const { promisify } = require("util");
-const { assertIsolatedWriteEnabled } = require("./featureFlags");
+const defaultDb = require("../db");
+const { assertPhase16WriteEnabled } = require("./featureFlags");
 
 const execFileAsync = promisify(execFile);
 const DEFAULT_TIMEOUT_MS = 10 * 60 * 1000;
@@ -128,11 +129,12 @@ function buildContainerInvocation({
 async function runSandboxed(
   options,
   {
+    db = defaultDb,
     env = process.env,
     runner = execFileAsync,
   } = {}
 ) {
-  assertIsolatedWriteEnabled(env);
+  await assertPhase16WriteEnabled({ db, env });
   const backend = String(options.backend || env.ISOLATED_SANDBOX_BACKEND || "").trim().toLowerCase();
   if (backend !== "container") {
     throw new Error("untrusted execution requires ISOLATED_SANDBOX_BACKEND=container; fallback execution is forbidden");
