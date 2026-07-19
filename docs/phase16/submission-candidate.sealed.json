@@ -1,0 +1,207 @@
+{
+  "schemaVersion": 1,
+  "phaseId": "phase-16",
+  "submissionRound": 1,
+  "submittedBy": "phase15-worker-codex-01",
+  "baseCommitSha": "c9b78e54e4ee5591d61ca6203d913821bdf425c9",
+  "candidateCommitSha": "38f5ff6b6894fb39861c1ba032d5452b2b102173",
+  "files": [
+    {
+      "path": "docs/phase16/known-issues.md",
+      "sha256": "sha256:6c5164145073d599bd54f97d16ad9623d4548a5ab9c1e7653a031e857d798fae",
+      "mode": "100644",
+      "type": "file"
+    },
+    {
+      "path": "docs/phase16/reconciliation-runbook.md",
+      "sha256": "sha256:e571bbf2a44517e2e78845376b811bdc23bb96613539a3acc1f0109b894858c7",
+      "mode": "100644",
+      "type": "file"
+    },
+    {
+      "path": "docs/phase16/requirements-trace.md",
+      "sha256": "sha256:36c06e4cb839420099e6e91a8b0c7aba7c7e08edc99196072a319dfe61420234",
+      "mode": "100644",
+      "type": "file"
+    },
+    {
+      "path": "docs/phase16/rollback-plan.md",
+      "sha256": "sha256:a0bfe2a8fcdcc1115ff0fb9f1f28dbda12a08a498060e541d64da006b828e459",
+      "mode": "100644",
+      "type": "file"
+    },
+    {
+      "path": "docs/phase16/verification-evidence.md",
+      "sha256": "sha256:02cd41ca86a071490d94b5365c58d93726f6c41b2a6ef35bb2becd5903f9e840",
+      "mode": "100644",
+      "type": "file"
+    },
+    {
+      "path": "docs/phase16/workspace-safety.md",
+      "sha256": "sha256:f1236653487d315783ae1cf8920d017577fe71af3abd025be356e12dea475bf0",
+      "mode": "100644",
+      "type": "file"
+    },
+    {
+      "path": "package.json",
+      "sha256": "sha256:743876c748be80db9adae6d4d6e0a65183024c05fddf4b67dc12d6747a266891",
+      "mode": "100644",
+      "type": "file"
+    },
+    {
+      "path": "scripts/phase16-workspace.js",
+      "sha256": "sha256:41352cdda25a2afeece2aa37d8ba552d0ab2f99024ba2ec6b348cc17d9237c53",
+      "mode": "100644",
+      "type": "file"
+    },
+    {
+      "path": "scripts/verify-readiness.js",
+      "sha256": "sha256:2e1cee9f8b9cee6d3ff02e501be4669cf3b25925d4ad68a1e469e5f7b07df5d9",
+      "mode": "100644",
+      "type": "file"
+    },
+    {
+      "path": "services/shell.js",
+      "sha256": "sha256:9b2d626cf013a2c588d57c03d1cbeccbb7afda6e892e1a667e3567e19b15c33e",
+      "mode": "100644",
+      "type": "file"
+    },
+    {
+      "path": "src/agents/qaAgent.js",
+      "sha256": "sha256:2674c724abb261c324157dd9ff087bbaa4a9c893d21aaa866e62e69c8c50805c",
+      "mode": "100644",
+      "type": "file"
+    },
+    {
+      "path": "src/core/approvalService.js",
+      "sha256": "sha256:1d098a45fcd93fb9120cf19e3730c44ad77b2a8f6ed4071d13760141ec1cc300",
+      "mode": "100644",
+      "type": "file"
+    },
+    {
+      "path": "src/core/processService.js",
+      "sha256": "sha256:d33d876f68dc15a30b557bd9cc301b07343bb8abc1d0ca3c530948416b0a2872",
+      "mode": "100644",
+      "type": "file"
+    },
+    {
+      "path": "src/db/migrationRunner.js",
+      "sha256": "sha256:f5970055f435af1d8ad62e78bd536f66b4936c214757a28e91acf7a28d93e324",
+      "mode": "100644",
+      "type": "file"
+    },
+    {
+      "path": "src/workspace/artifactService.js",
+      "sha256": "sha256:31d2ada002d29e41399a37b38fb6f69d3fbf1d321a9d7edffde5082fb6e15dfc",
+      "mode": "100644",
+      "type": "file"
+    },
+    {
+      "path": "src/workspace/contextManifestService.js",
+      "sha256": "sha256:5ca50bb7a3c598c4a446f64b725ae3ef75ac9e56f5d00e1e953f0303ad902f6c",
+      "mode": "100644",
+      "type": "file"
+    },
+    {
+      "path": "src/workspace/featureFlags.js",
+      "sha256": "sha256:ffe7f11824eab287a0f92c82ea5131efd26717d4bac40cbf74c1279e29338ab1",
+      "mode": "100644",
+      "type": "file"
+    },
+    {
+      "path": "src/workspace/finalizerService.js",
+      "sha256": "sha256:f49db09936b53624ecd51bd87c650241b6835a4c6d85702364149a4815593592",
+      "mode": "100644",
+      "type": "file"
+    },
+    {
+      "path": "src/workspace/index.js",
+      "sha256": "sha256:38a1a2095b34785c072e88b0aace98865578bd26b15860883872c6d0a72a562e",
+      "mode": "100644",
+      "type": "file"
+    },
+    {
+      "path": "src/workspace/isolatedWorkspaceService.js",
+      "sha256": "sha256:7fe1a18c532aa74213b373b975a173fb75f7e4aa3a5b24857ac0b90280d7c9ef",
+      "mode": "100644",
+      "type": "file"
+    },
+    {
+      "path": "src/workspace/sandboxService.js",
+      "sha256": "sha256:68cac38c41e2fc65be88fe7bc4c4466ceea5fb069a40a705e5e479fc6f1cfe71",
+      "mode": "100644",
+      "type": "file"
+    },
+    {
+      "path": "src/workspace/taskControlService.js",
+      "sha256": "sha256:13b449b3f81c21c4ab6cf423abfc9f2db7d4d20949fa4f346dc060f10426bad9",
+      "mode": "100644",
+      "type": "file"
+    },
+    {
+      "path": "src/workspace/workspaceExecutionPolicy.js",
+      "sha256": "sha256:762e960a12c07dd91d3e567cd8234a451cc437ed06a2a6a8ef540af8867f6204",
+      "mode": "100644",
+      "type": "file"
+    },
+    {
+      "path": "src/workspace/workspaceLeaseService.js",
+      "sha256": "sha256:778d7db5fdfe989c0b3230b99e13b11dd1f0dd066705a408eb12bdef036d0864",
+      "mode": "100644",
+      "type": "file"
+    },
+    {
+      "path": "test/phase16/containerIntegration.test.js",
+      "sha256": "sha256:86339d90d678f23a918c0816299026cede1121bd639219f52b201ee23562ddfa",
+      "mode": "100644",
+      "type": "file"
+    },
+    {
+      "path": "test/phase16/databaseIntegration.test.js",
+      "sha256": "sha256:de98d8aa8cee5dd47336d4b3c9392d997d609d109d9ff46c907dfddc2286ba4d",
+      "mode": "100644",
+      "type": "file"
+    },
+    {
+      "path": "test/phase16/workspaceSafety.test.js",
+      "sha256": "sha256:42984f38df77abbf8ea24ccaccf50ed77a1ec12c5007db60594ca10be51b769d",
+      "mode": "100644",
+      "type": "file"
+    }
+  ],
+  "migrationArtifacts": [
+    {
+      "path": "src/db/migrations/017_workspace_safety.down.sql",
+      "sha256": "sha256:a7bc86a9f907d76d01da75b124a670437535de480952431a12ae8207bdf00523",
+      "mode": "100644",
+      "type": "file"
+    },
+    {
+      "path": "src/db/migrations/017_workspace_safety.up.sql",
+      "sha256": "sha256:1976f2cf1d1c94874ee65ef5441faad68ec61695773873fa6a2f27e233452ed6",
+      "mode": "100644",
+      "type": "file"
+    }
+  ],
+  "testEvidence": [
+    {
+      "id": "phase16-container-escape",
+      "sha256": "sha256:86339d90d678f23a918c0816299026cede1121bd639219f52b201ee23562ddfa"
+    },
+    {
+      "id": "phase16-db-integration",
+      "sha256": "sha256:de98d8aa8cee5dd47336d4b3c9392d997d609d109d9ff46c907dfddc2286ba4d"
+    },
+    {
+      "id": "phase16-pure",
+      "sha256": "sha256:42984f38df77abbf8ea24ccaccf50ed77a1ec12c5007db60594ca10be51b769d"
+    },
+    {
+      "id": "phase16-worker-evidence",
+      "sha256": "sha256:02cd41ca86a071490d94b5365c58d93726f6c41b2a6ef35bb2becd5903f9e840"
+    }
+  ],
+  "requirementsTraceHash": "sha256:36c06e4cb839420099e6e91a8b0c7aba7c7e08edc99196072a319dfe61420234",
+  "rollbackPlanHash": "sha256:a0bfe2a8fcdcc1115ff0fb9f1f28dbda12a08a498060e541d64da006b828e459",
+  "knownIssuesHash": "sha256:6c5164145073d599bd54f97d16ad9623d4548a5ab9c1e7653a031e857d798fae"
+}
