@@ -51,11 +51,25 @@ Round 2 validation result (preserved):
 Round 3 submission:
 
 - DB submission: `phase16-submission-round-3`, `SEALED`
-- Phase status: `VALIDATION_IN_PROGRESS`
+- Phase status after seal: `VALIDATION_IN_PROGRESS`
 - Phase row version after seal: `12`
 - Independent candidate-tree hash verification: PASS, mismatch `0`
 - Production Developer path: registered native Codex sandbox followed by registered QA container
 - Pause DB failure: signal `0` before successful CAS; uncertain signal transitions to reconciliation
 - Workspace cleanup: status and lease owner/operation/fencing snapshot CAS with incident evidence
 
-이전 submission과 verdict는 변경하지 않고 보존한다. `CODER_WRITE_ENABLED`와 canonical fallback은 Round 3의 두 독립 검증과 Gate 수락 전까지 계속 비활성 상태여야 한다.
+Round 3 validation and Gate result:
+
+- Planning validation: signed `APPROVED`, validation `phase16-round3-planning-verdict`
+- Planning signed payload hash: `sha256:e59b721f57647969071c68653fcd39922fabe10960aa66072b867a987f0a622d`
+- Development validation: signed `APPROVED`, validation `phase16-round3-development-verdict`
+- Development signed payload hash: `sha256:74b9ef3bcd573bfcb9de942d5ca12ff04fbce31177c66015c5b16357c4faf86e`
+- Both verdicts approve the same canonical bundle hash
+- Gate result: `ACCEPTED`
+- Phase row version after Gate: `17`
+- Accepted at: `2026-07-20T00:25:01.768Z`
+- Remaining planning finding: abbreviated commit SHA presentation (`MINOR`, non-blocking; full SHA remains bound in storage and Gate evidence)
+- Post-Gate operational state: write flags still disabled, active lease/workspace/finalization/reconciliation all `0`
+- Phase 17 delivery row: not created yet
+
+이전 submission과 verdict는 변경하지 않고 보존한다. Gate 수락만으로 runtime write flag를 자동 활성화하지 않았으며, 실제 운영 설정과 고정 QA image가 준비되기 전까지 `CODER_WRITE_ENABLED=false`를 유지한다.
