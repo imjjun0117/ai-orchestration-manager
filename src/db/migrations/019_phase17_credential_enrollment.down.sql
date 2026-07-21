@@ -1,0 +1,5 @@
+REVOKE ALL ON FUNCTION store_phase17_channel_credential(TEXT, TEXT, TEXT, TEXT, TEXT, INTEGER, TEXT, JSONB) FROM PUBLIC;
+REVOKE ALL ON FUNCTION revoke_phase17_channel_credential(TEXT, TEXT, TEXT) FROM PUBLIC;
+
+DROP FUNCTION IF EXISTS store_phase17_channel_credential(TEXT, TEXT, TEXT, TEXT, TEXT, INTEGER, TEXT, JSONB);
+DROP FUNCTION IF EXISTS revoke_phase17_channel_credential(TEXT, TEXT, TEXT);

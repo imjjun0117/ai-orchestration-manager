@@ -16,6 +16,8 @@ async function registerActor({ id, actorType, displayName, credentialBinding, me
 
 async function createPhase({ id, name, sequenceNo, dependencies = [] }, { db } = {}) {
   const execute = async (client) => {
+    const dependencyIds = [...new Set(dependencies.map((value) => String(value || "").trim()).filter(Boolean))].sort();
+    if (dependencyIds.includes(id)) throw new Error("a phase cannot depend on itself");
     const phase = await queryOne(
       client,
       `INSERT INTO delivery_phases(id, name, sequence_no)
@@ -23,13 +25,58 @@ async function createPhase({ id, name, sequenceNo, dependencies = [] }, { db } =
        RETURNING *`,
       [id, name, sequenceNo]
     );
-    for (const dependencyId of dependencies) {
+    for (const dependencyId of dependencyIds) {
+      const predecessor = await queryOne(
+        client,
+        `SELECT p.id, p.status, p.latest_submission_id,
+                accepted_event.actor_id AS accepted_by_actor_id
+         FROM delivery_phases p
+         LEFT JOIN LATERAL (
+           SELECT e.actor_id
+           FROM phase_gate_events e
+           WHERE e.phase_id = p.id
+             AND e.phase_submission_id = p.latest_submission_id
+             AND e.event_type = 'PHASE_ACCEPTED'
+           ORDER BY e.id DESC
+           LIMIT 1
+         ) accepted_event ON TRUE
+         WHERE p.id = $1
+         FOR UPDATE OF p`,
+        [dependencyId]
+      );
+      if (!predecessor) throw new Error(`dependency phase does not exist: ${dependencyId}`);
       await client.query(
         `INSERT INTO phase_dependencies(phase_id, depends_on_phase_id)
          VALUES ($1, $2)
          ON CONFLICT DO NOTHING`,
         [id, dependencyId]
       );
+      if (["ACCEPTED", "ACCEPTED_WITH_DEBT"].includes(predecessor.status)) {
+        if (!predecessor.latest_submission_id || !predecessor.accepted_by_actor_id) {
+          throw new Error(`accepted dependency ${dependencyId} is missing authoritative Gate evidence`);
+        }
+        const activation = await queryOne(
+          client,
+          `INSERT INTO phase_dependency_activations(
+             phase_id, depends_on_phase_id, activated_by_submission_id, activated_by_actor_id
+           ) VALUES ($1, $2, $3, $4)
+           ON CONFLICT DO NOTHING
+           RETURNING *`,
+          [id, dependencyId, predecessor.latest_submission_id, predecessor.accepted_by_actor_id]
+        );
+        if (activation) {
+          await client.query(
+            `INSERT INTO phase_gate_events(phase_id, event_type, actor_id, event_payload)
+             VALUES ($1, 'PHASE_DEPENDENCY_ACTIVATED', $2,
+                     jsonb_build_object(
+                       'dependsOnPhaseId', $3::text,
+                       'activatedBySubmissionId', $4::text,
+                       'lateSuccessor', true
+                     ))`,
+            [id, predecessor.accepted_by_actor_id, dependencyId, predecessor.latest_submission_id]
+          );
+        }
+      }
     }
     return phase;
   };

@@ -25,6 +25,14 @@ const ROLE_PREFIXES = {
   "development-validator": "!review",
   "gate-admin": "!release",
 };
+const PHASE17_BOTS = Object.freeze([
+  Object.freeze({ role: "manager", instanceId: "manager-01", label: "Manager" }),
+  Object.freeze({ role: "planner", instanceId: "planner-01", label: "Planner" }),
+  Object.freeze({ role: "coder", instanceId: "coder-01", label: "Coder" }),
+  Object.freeze({ role: "reviewer", instanceId: "reviewer-01", label: "Reviewer" }),
+  Object.freeze({ role: "qa", instanceId: "qa-01", label: "QA" }),
+  Object.freeze({ role: "summarizer", instanceId: "summarizer-01", label: "Summarizer" }),
+]);
 
 function requestedRole(argv = process.argv.slice(2)) {
   const index = argv.indexOf("--role");
@@ -43,6 +51,131 @@ async function selectRole(ask) {
   const labelMatch = ROLES.find((role) => ROLE_LABELS[role].toLowerCase() === answer);
   if (labelMatch) return labelMatch;
   throw new Error(`Unsupported role: ${answer}`);
+}
+
+async function selectSetupMode(ask) {
+  const answer = String(await ask(
+    "Select setup mode:\n1) Phase 17: configure six role bot tokens\n2) Legacy: configure/start four bots\n3) Exit\nChoice",
+    "1"
+  )).trim().toLowerCase() || "1";
+  if (["1", "phase17", "phase-17", "six", "6"].includes(answer)) return "phase17";
+  if (["2", "legacy", "four", "4"].includes(answer)) return "legacy";
+  if (["3", "exit", "quit", "q"].includes(answer)) return "exit";
+  throw new Error(`Unsupported setup mode: ${answer}`);
+}
+
+function addFingerprintOwner(owners, fingerprint, instanceId) {
+  if (!fingerprint) return;
+  if (!owners.has(fingerprint)) owners.set(fingerprint, new Set());
+  owners.get(fingerprint).add(instanceId);
+}
+
+function removeFingerprintOwner(owners, fingerprint, instanceId) {
+  if (!fingerprint || !owners.has(fingerprint)) return;
+  const instances = owners.get(fingerprint);
+  instances.delete(instanceId);
+  if (instances.size === 0) owners.delete(fingerprint);
+}
+
+async function configurePhase17Credentials({
+  ask,
+  askSecret,
+  migrate,
+  statusLookup,
+  save,
+  fingerprint,
+  encrypt,
+  output = process.stdout,
+  isInteractive = () => Boolean(process.stdin.isTTY && process.stdout.isTTY),
+} = {}) {
+  if (!ask || !askSecret) throw new Error("Phase 17 setup requires text and hidden-secret prompt functions");
+  if (!String(process.env.CHANNEL_TOKEN_MASTER_KEY || "").trim()) {
+    throw new Error("CHANNEL_TOKEN_MASTER_KEY must be configured before Phase 17 setup");
+  }
+  if (!isInteractive()) {
+    throw new Error("Phase 17 token setup requires a TTY so tokens can be entered without echo");
+  }
+
+  const credentialService = require("./src/channels/channelCredentialService");
+  const { migrateUp } = require("./src/db/migrationRunner");
+  const migrateCredentialStore = migrate || migrateUp;
+  const lookupCredential = statusLookup || credentialService.getCredentialStatus;
+  const saveCredential = save || credentialService.storeToken;
+  const makeFingerprint = fingerprint || credentialService.tokenFingerprint;
+  const preflightEncryption = encrypt || credentialService.encryptToken;
+
+  preflightEncryption("master-key-preflight");
+  await migrateCredentialStore("016_channel_credentials");
+
+  const statuses = new Map();
+  const fingerprintOwners = new Map();
+  for (const bot of PHASE17_BOTS) {
+    const status = await lookupCredential({ channelType: "discord", botInstanceId: bot.instanceId });
+    statuses.set(bot.instanceId, status);
+    if (status?.status === "ACTIVE") {
+      if (!status.token_fingerprint) {
+        throw new Error(
+          `${bot.instanceId} is ACTIVE but has no credential fingerprint; run npm run phase17 -- fingerprint-credentials --confirm-fingerprint-backfill`
+        );
+      }
+      addFingerprintOwner(fingerprintOwners, status.token_fingerprint, bot.instanceId);
+    }
+  }
+
+  const configured = [];
+  const skipped = [];
+  for (const [index, bot] of PHASE17_BOTS.entries()) {
+    const existing = statuses.get(bot.instanceId);
+    output.write(`\n[bot-setup] ${bot.label} (${bot.instanceId}) ${index + 1}/${PHASE17_BOTS.length}\n`);
+    if (existing?.status === "ACTIVE") {
+      const duplicateOwners = fingerprintOwners.get(existing.token_fingerprint);
+      const mustReplace = duplicateOwners && duplicateOwners.size > 1;
+      if (mustReplace) {
+        output.write(
+          `[bot-setup] This credential is shared by multiple Phase 17 bots and must be replaced for ${bot.instanceId}.\n`
+        );
+      } else {
+        const replace = String(await ask("An ACTIVE token already exists. Replace it?", "no")).trim().toLowerCase();
+        if (!["y", "yes"].includes(replace)) {
+          skipped.push(bot.instanceId);
+          output.write(`[bot-setup] Preserved existing ACTIVE credential for ${bot.instanceId}.\n`);
+          continue;
+        }
+      }
+    }
+
+    let token;
+    let tokenFingerprint;
+    while (true) {
+      token = await askSecret(`${bot.label} bot token (hidden): `);
+      if (!token) throw new Error(`Bot token cannot be empty for ${bot.instanceId}`);
+      tokenFingerprint = makeFingerprint(token);
+      const conflictingOwners = [...(fingerprintOwners.get(tokenFingerprint) || [])]
+        .filter((instanceId) => instanceId !== bot.instanceId);
+      if (conflictingOwners.length === 0) break;
+      output.write(
+        `[bot-setup] That token is already assigned to another Phase 17 bot. Enter a distinct token for ${bot.instanceId}.\n`
+      );
+    }
+
+    const stored = await saveCredential({
+      channelType: "discord",
+      botInstanceId: bot.instanceId,
+      token,
+      metadata: { source: "bot-js-phase17-setup", role: bot.role },
+    });
+    removeFingerprintOwner(fingerprintOwners, existing?.token_fingerprint, bot.instanceId);
+    addFingerprintOwner(fingerprintOwners, tokenFingerprint, bot.instanceId);
+    configured.push(bot.instanceId);
+    output.write(
+      `[bot-setup] Stored encrypted credential for ${bot.instanceId} (key version ${stored?.key_version || "active"}).\n`
+    );
+  }
+
+  output.write(
+    `\n[bot-setup] Phase 17 setup complete: configured=${configured.length}, preserved=${skipped.length}. No bot was started.\n`
+  );
+  return { configured, skipped, total: PHASE17_BOTS.length };
 }
 
 async function ensureMasterKey(ask, { targetEnvFile = envFilePath } = {}) {
@@ -177,11 +310,9 @@ function launchRoles(
   });
 }
 
-async function interactiveStart() {
-  if (!process.stdin.isTTY || !process.stdout.isTTY) {
-    throw new Error("Interactive bot startup requires a TTY; use --role or BOT_INSTANCE_ID for unattended startup");
-  }
-  const { interactiveSetup, promptText } = require("./scripts/channel-credentials");
+async function legacyInteractiveStart({ promptText: suppliedPromptText } = {}) {
+  const { interactiveSetup, promptText: defaultPromptText } = require("./scripts/channel-credentials");
+  const promptText = suppliedPromptText || defaultPromptText;
   const { pool } = require("./src/channels/channelCredentialService");
   await ensureMasterKey(promptText);
   const configureAllAnswer = String(await promptText("Configure all four roles in this session?", "yes"))
@@ -219,6 +350,29 @@ async function interactiveStart() {
   return launchRole(rolesToConfigure[0]);
 }
 
+async function interactiveStart() {
+  if (!process.stdin.isTTY || !process.stdout.isTTY) {
+    throw new Error("Interactive bot setup requires a TTY; use --role or BOT_INSTANCE_ID for unattended legacy startup");
+  }
+  const { promptSecret } = require("./src/channels/hiddenSecretPrompt");
+  const { promptText } = require("./scripts/channel-credentials");
+  const mode = await selectSetupMode(promptText);
+  if (mode === "exit") {
+    process.stdout.write("[bot-setup] No changes made.\n");
+    return 0;
+  }
+  if (mode === "legacy") return legacyInteractiveStart({ promptText });
+
+  const { pool } = require("./src/channels/channelCredentialService");
+  await ensureMasterKey(promptText);
+  try {
+    await configurePhase17Credentials({ ask: promptText, askSecret: promptSecret });
+  } finally {
+    await pool.end();
+  }
+  return 0;
+}
+
 async function main() {
   const role = requestedRole();
   if (role) {
@@ -244,15 +398,19 @@ if (require.main === module) {
 }
 
 module.exports = {
+  PHASE17_BOTS,
   ROLES,
   ROLE_LABELS,
   ROLE_PREFIXES,
+  configurePhase17Credentials,
   ensureMasterKey,
   interactiveStart,
+  legacyInteractiveStart,
   launchRole,
   launchRoles,
   main,
   prefixStream,
   requestedRole,
+  selectSetupMode,
   selectRole,
 };

@@ -52,6 +52,40 @@ test("channel token encryption rejects missing or invalid master keys", () => {
   }
 });
 
+test("fingerprint backfill decrypts all rows before metadata-only updates", async () => {
+  const previous = process.env.CHANNEL_TOKEN_MASTER_KEY;
+  process.env.CHANNEL_TOKEN_MASTER_KEY = Buffer.alloc(32, 8).toString("base64");
+  const first = credentialService.encryptToken("first-token");
+  const second = credentialService.encryptToken("second-token");
+  const updates = [];
+  const row = (id, encrypted) => ({
+    id,
+    encrypted_token: encrypted.ciphertext.toString("base64"),
+    nonce: encrypted.iv.toString("base64"),
+    auth_tag: encrypted.authTag.toString("base64"),
+    key_version: encrypted.keyVersion,
+  });
+  const fakeDb = {
+    async query(sql, params) {
+      if (sql.includes("SELECT id, encrypted_token")) return { rows: [row(1, first), row(2, second)] };
+      updates.push({ sql, params });
+      return { rows: [] };
+    },
+  };
+  try {
+    const result = await credentialService.backfillTokenFingerprints({ channelType: "discord" }, { db: fakeDb });
+    assert.deepEqual(result, { channelType: "discord", fingerprinted: 2 });
+    assert.equal(updates.length, 2);
+    assert.match(updates[0].params[0], /^sha256:[0-9a-f]{64}$/);
+    assert.notEqual(updates[0].params[0], updates[1].params[0]);
+    assert.equal(updates.every(({ sql }) => !sql.includes("encrypted_token =")), true);
+    assert.equal(updates.some(({ params }) => params.includes("first-token") || params.includes("second-token")), false);
+  } finally {
+    if (previous === undefined) delete process.env.CHANNEL_TOKEN_MASTER_KEY;
+    else process.env.CHANNEL_TOKEN_MASTER_KEY = previous;
+  }
+});
+
 test("re-storing a revoked credential reactivates it", async () => {
   const previous = process.env.CHANNEL_TOKEN_MASTER_KEY;
   process.env.CHANNEL_TOKEN_MASTER_KEY = Buffer.alloc(32, 9).toString("base64");

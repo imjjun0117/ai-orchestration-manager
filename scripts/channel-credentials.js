@@ -3,8 +3,8 @@
 const fs = require("fs");
 const path = require("path");
 const readline = require("readline");
-const { Writable } = require("stream");
 const dotenv = require("dotenv");
+const { promptSecret } = require("../src/channels/hiddenSecretPrompt");
 
 const repoRoot = path.resolve(__dirname, "..");
 const envFile = process.env.ENV_FILE ? path.resolve(process.env.ENV_FILE) : path.join(repoRoot, ".env");
@@ -43,42 +43,6 @@ function promptText(label, defaultValue) {
     rl.on("close", () => {
       if (settled) return;
       settled = true;
-      reject(new Error("Interactive setup input ended unexpectedly"));
-    });
-  });
-}
-
-function promptSecret(label) {
-  if (!process.stdin.isTTY || !process.stdout.isTTY) {
-    throw new Error("Interactive setup requires a TTY so the token can be entered without echo");
-  }
-  let muted = false;
-  const hiddenOutput = new Writable({
-    write(chunk, encoding, callback) {
-      if (!muted) process.stdout.write(chunk, encoding);
-      callback();
-    },
-  });
-  const rl = readline.createInterface({ input: process.stdin, output: hiddenOutput, terminal: true });
-  process.stdout.write(label);
-  muted = true;
-  return new Promise((resolve, reject) => {
-    let settled = false;
-    const finish = (callback) => {
-      if (settled) return;
-      settled = true;
-      muted = false;
-      process.stdout.write("\n");
-      rl.close();
-      callback();
-    };
-    rl.question("", (answer) => finish(() => resolve(String(answer || "").trim())));
-    rl.on("SIGINT", () => finish(() => reject(new Error("Interactive setup cancelled"))));
-    rl.on("close", () => {
-      if (settled) return;
-      settled = true;
-      muted = false;
-      process.stdout.write("\n");
       reject(new Error("Interactive setup input ended unexpectedly"));
     });
   });

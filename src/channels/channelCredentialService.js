@@ -30,6 +30,10 @@ function encryptToken(token) {
   return { ciphertext, iv, authTag: cipher.getAuthTag(), keyVersion };
 }
 
+function tokenFingerprint(token) {
+  return `sha256:${crypto.createHash("sha256").update(String(token)).digest("hex")}`;
+}
+
 function decryptToken(row) {
   const decipher = crypto.createDecipheriv(ALGORITHM, masterKey(Number(row.key_version || 1)), Buffer.from(row.nonce, "base64"));
   decipher.setAuthTag(Buffer.from(row.auth_tag, "base64"));
@@ -55,7 +59,7 @@ async function storeToken({ channelType, botInstanceId, token, metadata = {} }, 
        metadata_json = EXCLUDED.metadata_json,
        updated_at = CURRENT_TIMESTAMP
      RETURNING id, channel_type, bot_instance_id, key_version, metadata_json`,
-    [channelType, botInstanceId, encrypted.ciphertext.toString("base64"), encrypted.iv.toString("base64"), encrypted.authTag.toString("base64"), encrypted.keyVersion, JSON.stringify(metadata)]
+    [channelType, botInstanceId, encrypted.ciphertext.toString("base64"), encrypted.iv.toString("base64"), encrypted.authTag.toString("base64"), encrypted.keyVersion, JSON.stringify({ ...metadata, tokenFingerprint: tokenFingerprint(token) })]
   );
   return result.rows[0];
 }
@@ -69,9 +73,43 @@ async function getToken({ channelType, botInstanceId }, { db = { query } } = {})
   return result.rows[0] ? decryptToken(result.rows[0]) : null;
 }
 
+async function getInstanceBoundToken({ channelType = "discord", botInstanceId }, { db = { query } } = {}) {
+  const result = await db.query("SELECT * FROM get_phase17_channel_credential($1,$2)", [botInstanceId, channelType]);
+  return result.rows[0] ? decryptToken(result.rows[0]) : null;
+}
+
+async function storeInstanceBoundToken({ channelType = "discord", botInstanceId, token, metadata = {} }, { db = { query } } = {}) {
+  if (!botInstanceId || !token) throw new Error("botInstanceId and token are required");
+  const encrypted = encryptToken(token);
+  const result = await db.query(
+    `SELECT * FROM store_phase17_channel_credential($1,$2,$3,$4,$5,$6,$7,$8::jsonb)`,
+    [
+      botInstanceId,
+      channelType,
+      encrypted.ciphertext.toString("base64"),
+      encrypted.iv.toString("base64"),
+      encrypted.authTag.toString("base64"),
+      encrypted.keyVersion,
+      tokenFingerprint(token),
+      JSON.stringify(metadata),
+    ]
+  );
+  return result.rows[0] || null;
+}
+
+async function revokeInstanceBoundToken({ channelType = "discord", botInstanceId, reason }, { db = { query } } = {}) {
+  if (!botInstanceId) throw new Error("botInstanceId is required");
+  const result = await db.query(
+    "SELECT * FROM revoke_phase17_channel_credential($1,$2,$3)",
+    [botInstanceId, channelType, reason || "Discord rejected runtime credential"]
+  );
+  return result.rows[0] || null;
+}
+
 async function getCredentialStatus({ channelType, botInstanceId }, { db = { query } } = {}) {
   const result = await db.query(
-    `SELECT channel_type, bot_instance_id, status, key_version, updated_at
+    `SELECT channel_type, bot_instance_id, status, key_version,
+            metadata_json->>'tokenFingerprint' AS token_fingerprint, updated_at
      FROM channel_credentials
      WHERE channel_type = $1 AND bot_instance_id = $2`,
     [channelType, botInstanceId]
@@ -105,21 +143,49 @@ async function rekeyTokens({ channelType = null, botInstanceId = null } = {}, { 
     const token = decryptToken(row);
     const encrypted = encryptToken(token);
     await db.query(
-      `UPDATE channel_credentials SET encrypted_token = $1, nonce = $2, auth_tag = $3, key_version = $4, updated_at = CURRENT_TIMESTAMP WHERE id = $5`,
-      [encrypted.ciphertext.toString("base64"), encrypted.iv.toString("base64"), encrypted.authTag.toString("base64"), encrypted.keyVersion, row.id]
+      `UPDATE channel_credentials SET encrypted_token = $1, nonce = $2, auth_tag = $3, key_version = $4,
+              metadata_json = metadata_json || jsonb_build_object('tokenFingerprint', $5::text), updated_at = CURRENT_TIMESTAMP
+       WHERE id = $6`,
+      [encrypted.ciphertext.toString("base64"), encrypted.iv.toString("base64"), encrypted.authTag.toString("base64"), encrypted.keyVersion, tokenFingerprint(token), row.id]
     );
     count += 1;
   }
   return { rekeyed: count, keyVersion: activeKeyVersion() };
 }
 
+async function backfillTokenFingerprints({ channelType = "discord" } = {}, { db = { query } } = {}) {
+  const selected = await db.query(
+    `SELECT id, encrypted_token, nonce, auth_tag, key_version
+     FROM channel_credentials
+     WHERE status = 'ACTIVE' AND channel_type = $1 AND NOT (metadata_json ? 'tokenFingerprint')
+     ORDER BY id`,
+    [channelType]
+  );
+  const fingerprints = selected.rows.map((row) => ({ id: row.id, fingerprint: tokenFingerprint(decryptToken(row)) }));
+  for (const item of fingerprints) {
+    await db.query(
+      `UPDATE channel_credentials
+       SET metadata_json = metadata_json || jsonb_build_object('tokenFingerprint', $1::text),
+           updated_at = CURRENT_TIMESTAMP
+       WHERE id = $2 AND status = 'ACTIVE' AND NOT (metadata_json ? 'tokenFingerprint')`,
+      [item.fingerprint, item.id]
+    );
+  }
+  return { channelType, fingerprinted: fingerprints.length };
+}
+
 module.exports = {
+  backfillTokenFingerprints,
   decryptToken,
   encryptToken,
   getCredentialStatus,
+  getInstanceBoundToken,
   getToken,
   pool,
   rekeyTokens,
   revokeToken,
+  revokeInstanceBoundToken,
+  storeInstanceBoundToken,
   storeToken,
+  tokenFingerprint,
 };

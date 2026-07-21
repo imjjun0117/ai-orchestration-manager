@@ -1,0 +1,4 @@
+interface:
+  display_name: "Codex Dual-Review Delivery Cycle"
+  short_description: "Codex 구현과 Claude·Antigravity 이중 검증"
+  default_prompt: "Use $agy-claude-delivery-cycle to implement this request with Codex and iterate through Claude Fable and Antigravity reviews."

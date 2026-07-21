@@ -892,6 +892,50 @@ if (!enabled) {
     assert.equal(status.dependencies[0].activated_by_submission_id, sealed.submission.id);
   });
 
+  test("a successor created after predecessor acceptance receives authoritative dependency activation", async () => {
+    const predecessor = await seedPhase("late-successor-predecessor");
+    const sealed = await sealFirstSubmission(predecessor);
+    await validate(predecessor, sealed.submission.id, "PLANNING");
+    await validate(predecessor, sealed.submission.id, "DEVELOPMENT");
+    await gateService.gatePhase(
+      {
+        phaseId: predecessor.phaseId,
+        actorId: predecessor.actors.GATE_ADMIN,
+        credentialBinding: predecessor.credentials.GATE_ADMIN,
+        expectedVersion: await phaseVersion(predecessor.phaseId),
+      },
+      { db: pool }
+    );
+
+    const successor = await seedPhase(
+      "late-successor",
+      { dependencies: [predecessor.phaseId], start: false }
+    );
+    const status = await phaseService.getPhaseStatus(successor.phaseId, { db: pool });
+    assert.equal(status.startReadiness.ready, true);
+    assert.equal(status.dependencies[0].activated_by_submission_id, sealed.submission.id);
+    const events = await pool.query(
+      `SELECT actor_id, event_payload
+       FROM phase_gate_events
+       WHERE phase_id = $1 AND event_type = 'PHASE_DEPENDENCY_ACTIVATED'`,
+      [successor.phaseId]
+    );
+    assert.equal(events.rowCount, 1);
+    assert.equal(events.rows[0].actor_id, predecessor.actors.GATE_ADMIN);
+    assert.equal(events.rows[0].event_payload.lateSuccessor, true);
+
+    const started = await phaseService.startPhase(
+      {
+        phaseId: successor.phaseId,
+        actorId: successor.actors.GATE_ADMIN,
+        credentialBinding: successor.credentials.GATE_ADMIN,
+        expectedVersion: 0,
+      },
+      { db: pool }
+    );
+    assert.equal(started.status, "IN_PROGRESS");
+  });
+
   test("Gate administrator can cancel an active phase with an audited reason", async () => {
     const seed = await seedPhase("cancel");
     const cancelled = await phaseService.cancelPhase(
