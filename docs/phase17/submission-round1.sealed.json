@@ -1,0 +1,359 @@
+{
+  "schemaVersion": 1,
+  "phaseId": "phase-17",
+  "submissionRound": 1,
+  "submittedBy": "phase15-worker-codex-01",
+  "baseCommitSha": "2401277e8842664646d0feb4d8f5c853e2858686",
+  "candidateCommitSha": "5cef762c5d8ae2aeff37626d5caa84fec048e800",
+  "files": [
+    {
+      "path": ".agents/skills/agy-claude-delivery-cycle/SKILL.md",
+      "type": "file",
+      "mode": "100644",
+      "sha256": "sha256:7b6e8f53d430c48493d72d7b33f062468d60b722068bec6e99d2496f308f26a5"
+    },
+    {
+      "path": ".agents/skills/agy-claude-delivery-cycle/agents/openai.yaml",
+      "type": "file",
+      "mode": "100644",
+      "sha256": "sha256:3a1dc41bdf4a881cef74708b9923c73115b0b10299c710161905b5a708d00085"
+    },
+    {
+      "path": "PHASE17.md",
+      "type": "file",
+      "mode": "100644",
+      "sha256": "sha256:23249c9a35979a3520c175ddc0e19d8f0569ea706e3112d8bd74e6149c7aa206"
+    },
+    {
+      "path": "bot.js",
+      "type": "file",
+      "mode": "100644",
+      "sha256": "sha256:464ec70ae515b10aca1a1a9bfd6d72ec67788d572d9220c65542bf82400ed1e9"
+    },
+    {
+      "path": "docs/phase17/known-issues.md",
+      "type": "file",
+      "mode": "100644",
+      "sha256": "sha256:ae03bdb8c8aab191076d04e47f28ec35a78756cba7e26784777cb22476acc41b"
+    },
+    {
+      "path": "docs/phase17/requirements-trace.md",
+      "type": "file",
+      "mode": "100644",
+      "sha256": "sha256:275fcb87c0368281c94bee4a755615b18701bdc5b31b9b45b5d59dc5568ec398"
+    },
+    {
+      "path": "docs/phase17/rollback-plan.md",
+      "type": "file",
+      "mode": "100644",
+      "sha256": "sha256:d80e3d3ed2dcc567fa774543b2949c366629197d26e0bd7241c42c58fc6ee7b5"
+    },
+    {
+      "path": "docs/phase17/verification-evidence.md",
+      "type": "file",
+      "mode": "100644",
+      "sha256": "sha256:b7ada10d4f0980962baf99a68e5a9c73934d8b8abbe463daecfd4ee94356d383"
+    },
+    {
+      "path": "managerBot.js",
+      "type": "file",
+      "mode": "100644",
+      "sha256": "sha256:5f249ec00fee3229631017369331a29a1381d361870a934c283eedd9b7df8694"
+    },
+    {
+      "path": "package-lock.json",
+      "type": "file",
+      "mode": "100644",
+      "sha256": "sha256:6066cd90dbb06d9aa6d308c5c26e554c0bf85594fb3c578623e74c6711ba8265"
+    },
+    {
+      "path": "package.json",
+      "type": "file",
+      "mode": "100644",
+      "sha256": "sha256:b1d0f2aacfd123202762757197ac2aa91e667ade19405920a687279e2baa7d91"
+    },
+    {
+      "path": "roleBot.js",
+      "type": "file",
+      "mode": "100644",
+      "sha256": "sha256:332dc2c2f8e40cee5c104a63315518275d7ea82f749f35cc04144f8323e0ee76"
+    },
+    {
+      "path": "scripts/channel-credentials.js",
+      "type": "file",
+      "mode": "100644",
+      "sha256": "sha256:01f0015cf74e82d4e2483d4c1d84eb5b2a2e1f63b74b0e0d3799dcd63be4daa7"
+    },
+    {
+      "path": "scripts/phase17-control-plane.js",
+      "type": "file",
+      "mode": "100644",
+      "sha256": "sha256:be6e74d5bb0df424d296ccf80cb7a5ffaf3de646849ec62328c667a369621420"
+    },
+    {
+      "path": "scripts/phase17-discord-author-smoke.js",
+      "type": "file",
+      "mode": "100644",
+      "sha256": "sha256:10930c2a3b85c94fe293c4e88a9837d42f3c566573f8b2d68de573b4893fd603"
+    },
+    {
+      "path": "scripts/phase17-discord-resilience-smoke.js",
+      "type": "file",
+      "mode": "100644",
+      "sha256": "sha256:3ad62ad6883b2b7e332f35847a862674ae3486c8b5a342b832d8a40e0bc352a3"
+    },
+    {
+      "path": "scripts/run-phase17-multibot.js",
+      "type": "file",
+      "mode": "100644",
+      "sha256": "sha256:6a82f481bf2e24823dfb8929a0fb1d68a637e931362d8bc724ff076474c798d4"
+    },
+    {
+      "path": "scripts/verify-readiness.js",
+      "type": "file",
+      "mode": "100644",
+      "sha256": "sha256:b60a264f68ca48550493fada464d9a9d14040b4832032e838594c101ee736038"
+    },
+    {
+      "path": "src/channels/channelCredentialService.js",
+      "type": "file",
+      "mode": "100644",
+      "sha256": "sha256:0b00c3b0a265e3556864cf8bd8e78ebd3c0dbdcc87fb4eba5921b0573513465f"
+    },
+    {
+      "path": "src/channels/hiddenSecretPrompt.js",
+      "type": "file",
+      "mode": "100644",
+      "sha256": "sha256:e6838a71c291eb2fed6e39e4a352823c6b5cb7440cb1755b19c0abb43b9da267"
+    },
+    {
+      "path": "src/channels/runtimeCredentialEnrollment.js",
+      "type": "file",
+      "mode": "100644",
+      "sha256": "sha256:8d28e75ce4828d266acfd74bde4d8a49fc66c884f71639a9bd9691fd6d08df9f"
+    },
+    {
+      "path": "src/controlPlane/featureFlags.js",
+      "type": "file",
+      "mode": "100644",
+      "sha256": "sha256:8839c49dc332cea320313e535344f2f0f7daed0d03053741d2933c5a9db5b879"
+    },
+    {
+      "path": "src/controlPlane/instanceService.js",
+      "type": "file",
+      "mode": "100644",
+      "sha256": "sha256:6a53ea0758590600787857c1088aa6ff466d1bb19d47b0983b3d70175218d01d"
+    },
+    {
+      "path": "src/controlPlane/operationsService.js",
+      "type": "file",
+      "mode": "100644",
+      "sha256": "sha256:3feea975cad0980c76124f28922b3a1e1fce7d721ded706807847a0cf84bad17"
+    },
+    {
+      "path": "src/controlPlane/outboxDispatcher.js",
+      "type": "file",
+      "mode": "100644",
+      "sha256": "sha256:a5916450181211f83aee9c305cc58a6194e4beef328d57534c2654a9d177e47b"
+    },
+    {
+      "path": "src/controlPlane/outboxService.js",
+      "type": "file",
+      "mode": "100644",
+      "sha256": "sha256:110211e5b19935cc5ba9e0be41ef11b2ba3b44f389b6c0f77e6688898e1b4041"
+    },
+    {
+      "path": "src/controlPlane/publicationService.js",
+      "type": "file",
+      "mode": "100644",
+      "sha256": "sha256:d87b031800078681117ef3918078aa1833f4b63c704d88420f3a1aa3eb808748"
+    },
+    {
+      "path": "src/controlPlane/reconciliationService.js",
+      "type": "file",
+      "mode": "100644",
+      "sha256": "sha256:7b75c05184d9a892c96cc2374c818cd753e2a80c5edd4af2fee94fe5ab5b3eab"
+    },
+    {
+      "path": "src/controlPlane/resultArtifactService.js",
+      "type": "file",
+      "mode": "100644",
+      "sha256": "sha256:e4c09fe2875565707e942c5df0d6b346e59aeb832f76438935c8985dc34af4ac"
+    },
+    {
+      "path": "src/controlPlane/roleConfig.js",
+      "type": "file",
+      "mode": "100644",
+      "sha256": "sha256:f3b38efd238b5dc3a1672d46d87fa78acffc961872b300e913dfd3634aa868dc"
+    },
+    {
+      "path": "src/controlPlane/roleExecutor.js",
+      "type": "file",
+      "mode": "100644",
+      "sha256": "sha256:2b9e2ae3910abfca1acaab5cdc678ab8ea3bff5e8c65c67ce58f998272bfa87b"
+    },
+    {
+      "path": "src/controlPlane/roleJobService.js",
+      "type": "file",
+      "mode": "100644",
+      "sha256": "sha256:4e466d78deaaf5b0c39992a2e8e45c36c5597d5645a6b6c4994bed65f8d634b1"
+    },
+    {
+      "path": "src/controlPlane/roleWorker.js",
+      "type": "file",
+      "mode": "100644",
+      "sha256": "sha256:8af70d964ec0edf6a8cfedf66d9b3a1db6d2c6b92b70d72bd7f5b71ff1db800b"
+    },
+    {
+      "path": "src/controlPlane/runtime.js",
+      "type": "file",
+      "mode": "100644",
+      "sha256": "sha256:83297fd38adebc1cbb79f7335c08b4b4d889c8d252bd0296ccba043072f80d6d"
+    },
+    {
+      "path": "src/controlPlane/watchdogService.js",
+      "type": "file",
+      "mode": "100644",
+      "sha256": "sha256:133644beeb237c4c6d98f39716bca997eb92c336ad59bb3827998dee2ec36ed9"
+    },
+    {
+      "path": "src/controlPlane/workflowService.js",
+      "type": "file",
+      "mode": "100644",
+      "sha256": "sha256:488312077dacbbba88091e6fed73f7cde8c11ceed3c2d9995e687f7027e765ff"
+    },
+    {
+      "path": "src/db/migrationRunner.js",
+      "type": "file",
+      "mode": "100644",
+      "sha256": "sha256:49ee5d258cd2ddf283ffc293b6f416ebd866593171e73485cff1babe5259b565"
+    },
+    {
+      "path": "src/delivery/phaseService.js",
+      "type": "file",
+      "mode": "100644",
+      "sha256": "sha256:91b0480f8ef2a74a14869e0dfad6ca76667e67000d7fe4aae82305c5378753b0"
+    },
+    {
+      "path": "src/discord/discordPublicationTransport.js",
+      "type": "file",
+      "mode": "100644",
+      "sha256": "sha256:a2e78c539a609550e2596e6dde78411604a89b748d3277b0f6c88d65efee73e5"
+    },
+    {
+      "path": "src/discord/managerCommandIngress.js",
+      "type": "file",
+      "mode": "100644",
+      "sha256": "sha256:3cff5624ac2d74d20633f488ec88262991831b13537d3e2e053f46946b0e3c47"
+    },
+    {
+      "path": "test/phase15/channelCredentialService.test.js",
+      "type": "file",
+      "mode": "100644",
+      "sha256": "sha256:3465b26eda00ea343b94b1d40cfbe842fe840a140c4c9e233d5e237f28ec8476"
+    },
+    {
+      "path": "test/phase15/databaseIntegration.test.js",
+      "type": "file",
+      "mode": "100644",
+      "sha256": "sha256:8d74afc5a18dac8eefaeafa1d0d4ba8276d34958d5ce0489c5dd06b2c606698e"
+    },
+    {
+      "path": "test/phase17/botSetup.test.js",
+      "type": "file",
+      "mode": "100644",
+      "sha256": "sha256:d1779ad65cc5653741d9d842b4a9d4d516fc2d06f8dbf8426216132ac8172a9e"
+    },
+    {
+      "path": "test/phase17/controlPlane.test.js",
+      "type": "file",
+      "mode": "100644",
+      "sha256": "sha256:38cd7437e1cd95e72826d421c91e6cc912b1b39a86d90d3bbe523ed837503654"
+    },
+    {
+      "path": "test/phase17/databaseIntegration.test.js",
+      "type": "file",
+      "mode": "100644",
+      "sha256": "sha256:c73425e18c1385b0688b9cfdaef73b2272c5fa9de1641f8c4fd7080493e91a74"
+    },
+    {
+      "path": "test/phase17/discordAuthorSmoke.test.js",
+      "type": "file",
+      "mode": "100644",
+      "sha256": "sha256:cc84f91bebd7ea99af2968f2abf700fce4e727ab05c7f41536b2c70cd875b646"
+    },
+    {
+      "path": "test/phase17/discordResilienceSmoke.test.js",
+      "type": "file",
+      "mode": "100644",
+      "sha256": "sha256:6db2a664116172c4f2b4bd4e03ea52c9a96c968817da0923a452dbb85f909418"
+    }
+  ],
+  "migrationArtifacts": [
+    {
+      "path": "src/db/migrations/018_durable_control_plane.down.sql",
+      "type": "file",
+      "mode": "100644",
+      "sha256": "sha256:03702c9b93cb652831c332438936638e901455ba25558d62e62cb998085ee39a"
+    },
+    {
+      "path": "src/db/migrations/018_durable_control_plane.up.sql",
+      "type": "file",
+      "mode": "100644",
+      "sha256": "sha256:d0c24cec7e439335bc7ec0247a092527284d883842e0e16f4b144f753fed9f34"
+    },
+    {
+      "path": "src/db/migrations/019_phase17_credential_enrollment.down.sql",
+      "type": "file",
+      "mode": "100644",
+      "sha256": "sha256:bc00d74ec5b25578cd75ca0e9c144d09aa6806b42fef7d83d1d6abb80957be5a"
+    },
+    {
+      "path": "src/db/migrations/019_phase17_credential_enrollment.up.sql",
+      "type": "file",
+      "mode": "100644",
+      "sha256": "sha256:1d71bece81bb74d20c4555b144e596ed8468eea5238c18bd2dcd454f558095f5"
+    },
+    {
+      "path": "src/db/migrations/020_phase17_operator_reconciliation.down.sql",
+      "type": "file",
+      "mode": "100644",
+      "sha256": "sha256:d09f688634f81c4f018e119d6aa0f1cb0c36daaf4ea4f8989d2a30b214d38aa1"
+    },
+    {
+      "path": "src/db/migrations/020_phase17_operator_reconciliation.up.sql",
+      "type": "file",
+      "mode": "100644",
+      "sha256": "sha256:53e0e7f1e3e06eef60f50b0f5a1df5060f1c0ffa854ea5d5d54c26dd8ddb5737"
+    }
+  ],
+  "testEvidence": [
+    {
+      "id": "phase17-author-smoke",
+      "sha256": "sha256:cc84f91bebd7ea99af2968f2abf700fce4e727ab05c7f41536b2c70cd875b646"
+    },
+    {
+      "id": "phase17-bot-setup",
+      "sha256": "sha256:d1779ad65cc5653741d9d842b4a9d4d516fc2d06f8dbf8426216132ac8172a9e"
+    },
+    {
+      "id": "phase17-control-plane",
+      "sha256": "sha256:38cd7437e1cd95e72826d421c91e6cc912b1b39a86d90d3bbe523ed837503654"
+    },
+    {
+      "id": "phase17-db-integration",
+      "sha256": "sha256:c73425e18c1385b0688b9cfdaef73b2272c5fa9de1641f8c4fd7080493e91a74"
+    },
+    {
+      "id": "phase17-resilience-smoke",
+      "sha256": "sha256:6db2a664116172c4f2b4bd4e03ea52c9a96c968817da0923a452dbb85f909418"
+    },
+    {
+      "id": "phase17-worker-evidence",
+      "sha256": "sha256:b7ada10d4f0980962baf99a68e5a9c73934d8b8abbe463daecfd4ee94356d383"
+    }
+  ],
+  "requirementsTraceHash": "sha256:275fcb87c0368281c94bee4a755615b18701bdc5b31b9b45b5d59dc5568ec398",
+  "rollbackPlanHash": "sha256:d80e3d3ed2dcc567fa774543b2949c366629197d26e0bd7241c42c58fc6ee7b5",
+  "knownIssuesHash": "sha256:ae03bdb8c8aab191076d04e47f28ec35a78756cba7e26784777cb22476acc41b"
+}
