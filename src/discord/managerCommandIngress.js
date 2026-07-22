@@ -1,5 +1,6 @@
 const operations = require("../controlPlane/operationsService");
 const workflowService = require("../controlPlane/workflowService");
+const workflowApprovalService = require("../controlPlane/workflowApprovalService");
 
 const OPS_COMMANDS = new Set(["!team", "!health", "!roles", "!instance"]);
 
@@ -13,7 +14,12 @@ function shouldIgnoreMessage(message, registeredBotUserIds = new Set()) {
   );
 }
 
-function createManagerIngress({ config, db, registeredBotUserIds = new Set() }) {
+function createManagerIngress({
+  config,
+  db,
+  registeredBotUserIds = new Set(),
+  resolveApprovalCommand = workflowApprovalService.resolveApprovalCommand,
+}) {
   if (!config || config.role !== "manager") throw new Error("Manager ingress requires BOT_ROLE=manager");
   return async function handle(message) {
     if (shouldIgnoreMessage(message, registeredBotUserIds)) return { ignored: true, reason: "non-user-message" };
@@ -29,6 +35,22 @@ function createManagerIngress({ config, db, registeredBotUserIds = new Set() }) 
         config.instanceId, String(message.id), String(message.channelId), output,
       ]);
       return { operational: true, command: parsed.command, queued: true };
+    }
+    if (workflowApprovalService.APPROVAL_COMMANDS.has(parsed.command)) {
+      const resolved = await resolveApprovalCommand({
+        parsed,
+        managerInstanceId: config.instanceId,
+        discordUserId: String(message.author.id),
+        channelId: String(message.channelId),
+      }, { db });
+      const action = resolved.approved ? "승인" : "반려";
+      await db.query("SELECT * FROM enqueue_manager_notice($1,$2,$3,'OPERATIONAL_RESPONSE',$4)", [
+        config.instanceId,
+        String(message.id),
+        String(message.channelId),
+        `${action} 처리했습니다. task=${resolved.taskId} node=${resolved.nodeId}`,
+      ]);
+      return { approval: true, command: parsed.command, queued: true, ...resolved };
     }
     const accepted = await workflowService.receiveCommand({
       parsed,

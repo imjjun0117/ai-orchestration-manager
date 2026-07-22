@@ -17,6 +17,7 @@ const phase16ReworkMigrationPath = path.join(repoRoot, "src/db/migrations/017_wo
 const phase17MigrationPath = path.join(repoRoot, "src/db/migrations/018_durable_control_plane.up.sql");
 const phase17EnrollmentMigrationPath = path.join(repoRoot, "src/db/migrations/019_phase17_credential_enrollment.up.sql");
 const phase17ReconciliationMigrationPath = path.join(repoRoot, "src/db/migrations/020_phase17_operator_reconciliation.up.sql");
+const phase17WorkflowApprovalMigrationPath = path.join(repoRoot, "src/db/migrations/021_phase17_workflow_approvals.up.sql");
 const botRuntimePath = path.join(repoRoot, "bot-runtime.js");
 const phase16CliPath = path.join(repoRoot, "scripts/phase16-workspace.js");
 const phase16SandboxPath = path.join(repoRoot, "src/workspace/sandboxService.js");
@@ -394,6 +395,7 @@ function checkSchemaStatic() {
     [phase17MigrationPath, "Phase 17 control-plane"],
     [phase17EnrollmentMigrationPath, "Phase 17 enrollment"],
     [phase17ReconciliationMigrationPath, "Phase 17 reconciliation"],
+    [phase17WorkflowApprovalMigrationPath, "Phase 17 workflow approvals"],
   ]) {
     assert(fs.existsSync(filePath), `${label} migration is missing`);
   }
@@ -409,6 +411,19 @@ function checkSchemaStatic() {
     assert(
       phase17ReconciliationMigration.includes(snippet),
       `Phase 17 reconciliation migration is missing required snippet: ${snippet}`
+    );
+  }
+  const phase17WorkflowApprovalMigration = fs.readFileSync(phase17WorkflowApprovalMigrationPath, "utf8");
+  for (const snippet of [
+    "resolve_discord_workflow_approval",
+    "resolvedByDiscordUserId",
+    "commit_approval_phase16",
+    "workspace_finalizations",
+    "REVOKE ALL ON FUNCTION resolve_discord_workflow_approval",
+  ]) {
+    assert(
+      phase17WorkflowApprovalMigration.includes(snippet),
+      `Phase 17 workflow approval migration is missing required snippet: ${snippet}`
     );
   }
   const botRuntime = fs.readFileSync(botRuntimePath, "utf8");
@@ -622,6 +637,7 @@ async function checkLiveDatabase() {
       ["018_durable_control_plane", checksum(fs.readFileSync(phase17MigrationPath, "utf8"))],
       ["019_phase17_credential_enrollment", checksum(fs.readFileSync(phase17EnrollmentMigrationPath, "utf8"))],
       ["020_phase17_operator_reconciliation", checksum(fs.readFileSync(phase17ReconciliationMigrationPath, "utf8"))],
+      ["021_phase17_workflow_approvals", checksum(fs.readFileSync(phase17WorkflowApprovalMigrationPath, "utf8"))],
     ]);
     const { rows: migrationRows } = await db.query(
       `SELECT id, checksum FROM schema_migrations WHERE id = ANY($1)`,

@@ -14,12 +14,19 @@ function configs({ mode = "shadow", executionMode = "dry-run" } = {}) {
     mode,
     executionMode,
     parsed: {
-      ...(role === "coder" || role === "qa" ? {
+      ...(role === "manager" || role === "coder" || role === "qa" ? {
         ISOLATED_WORKSPACE_MODE: "true",
         CODER_WRITE_ENABLED: "true",
+      } : {}),
+      ...(role === "coder" || role === "qa" ? {
         ISOLATED_WORKSPACE_ROOT: "/private/isolated",
       } : {}),
-      ...(role === "coder" ? { WORKSPACE_DIR: "/private/canonical.git" } : {}),
+      ...(role === "coder" ? {
+        WORKSPACE_DIR: "/private/canonical.git",
+        FINALIZER_ACTOR_ID: "manager-01",
+        CANDIDATE_APPROVAL_TTL_MS: "86400000",
+        FINALIZER_LEASE_TTL_MS: "86400000",
+      } : {}),
       ...(role === "qa" ? {
         ISOLATED_SANDBOX_BACKEND: "container",
         SANDBOX_CONTAINER_IMAGE: "sha256:abcdef1234567890",
@@ -54,6 +61,7 @@ test("active six-role topology requires enforced mode, a bare canonical repo, an
   assert.equal(result.executionMode, "active");
   assert.equal(result.canonical, "/private/canonical.git");
   assert.equal(result.isolationRoot, "/private/isolated");
+  assert.equal(result.finalizerActorId, "manager-01");
   assert.equal(inspected, "sha256:abcdef1234567890");
 });
 
@@ -140,6 +148,26 @@ test("active topology rejects an unavailable QA image and overlapping safety roo
       inspectImage: () => "sha256:local",
     }),
     /must not contain each other/
+  );
+});
+
+test("active topology binds candidate finalization to the exact Manager and bounded TTLs", () => {
+  const mismatchedActor = configs({ mode: "enforced", executionMode: "active" });
+  mismatchedActor.find(({ role }) => role === "coder").parsed.FINALIZER_ACTOR_ID = "manager-other";
+  assert.throws(
+    () => validateExecutionTopology(mismatchedActor, {
+      fileSystem: fakeFileSystem(), gitIsBare: () => true, inspectImage: () => "sha256:local",
+    }),
+    /must equal the active Manager/
+  );
+
+  const shortLease = configs({ mode: "enforced", executionMode: "active" });
+  shortLease.find(({ role }) => role === "coder").parsed.FINALIZER_LEASE_TTL_MS = "60000";
+  assert.throws(
+    () => validateExecutionTopology(shortLease, {
+      fileSystem: fakeFileSystem(), gitIsBare: () => true, inspectImage: () => "sha256:local",
+    }),
+    /approval TTL/
   );
 });
 

@@ -50,6 +50,16 @@ async function executeSafeRole(job, config, { db = dbDefault, env = process.env 
 
 async function executeCoder(job, config, { db = dbDefault, env = process.env } = {}) {
   const canonicalRepository = fs.realpathSync.native(env.WORKSPACE_DIR || process.cwd());
+  const finalizerActorId = String(env.FINALIZER_ACTOR_ID || "").trim();
+  if (!/^[a-zA-Z0-9_.-]{1,64}$/.test(finalizerActorId)) {
+    throw new Error("FINALIZER_ACTOR_ID must identify the active Manager instance");
+  }
+  const approvalTtlMs = Number.parseInt(env.CANDIDATE_APPROVAL_TTL_MS || "86400000", 10);
+  const finalizerLeaseTtlMs = Number.parseInt(env.FINALIZER_LEASE_TTL_MS || "86400000", 10);
+  if (!Number.isInteger(approvalTtlMs) || approvalTtlMs < 60_000
+      || !Number.isInteger(finalizerLeaseTtlMs) || finalizerLeaseTtlMs < approvalTtlMs) {
+    throw new Error("candidate approval and finalizer lease TTLs are invalid");
+  }
   const { rows } = await db.query("SELECT status, row_version, original_request FROM tasks WHERE id = $1", [job.task_id]);
   const task = rows[0];
   if (!task) throw new Error(`task ${job.task_id} does not exist`);
@@ -81,7 +91,9 @@ async function executeCoder(job, config, { db = dbDefault, env = process.env } =
     expectedTaskState: task.status,
     expectedTaskVersion: task.row_version,
     requestedBy: config.instanceId,
-    finalizerActorId: "manager-primary",
+    finalizerActorId,
+    approvalTtlMs,
+    finalizerLeaseTtlMs,
     commitMessage: `task(${job.task_id}): coder result`,
   }, { db, env });
   return {

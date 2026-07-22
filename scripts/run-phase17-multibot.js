@@ -94,13 +94,24 @@ function validateExecutionTopology(
 
   const coder = configs.find((config) => config.role === "coder");
   const qa = configs.find((config) => config.role === "qa");
-  for (const config of [coder, qa]) {
+  const manager = configs.find((config) => config.role === "manager");
+  for (const config of [manager, coder, qa]) {
     if (!profileEnabled(config, "ISOLATED_WORKSPACE_MODE")) {
       throw new Error(`${config.role} profile requires ISOLATED_WORKSPACE_MODE=true`);
     }
     if (!profileEnabled(config, "CODER_WRITE_ENABLED")) {
       throw new Error(`${config.role} profile requires CODER_WRITE_ENABLED=true`);
     }
+  }
+  const finalizerActorId = requiredProfileValue(coder, "FINALIZER_ACTOR_ID");
+  if (finalizerActorId !== manager.instanceId) {
+    throw new Error("coder FINALIZER_ACTOR_ID must equal the active Manager BOT_INSTANCE_ID");
+  }
+  const approvalTtlMs = Number.parseInt(requiredProfileValue(coder, "CANDIDATE_APPROVAL_TTL_MS"), 10);
+  const finalizerLeaseTtlMs = Number.parseInt(requiredProfileValue(coder, "FINALIZER_LEASE_TTL_MS"), 10);
+  if (!Number.isInteger(approvalTtlMs) || approvalTtlMs < 60_000
+      || !Number.isInteger(finalizerLeaseTtlMs) || finalizerLeaseTtlMs < approvalTtlMs) {
+    throw new Error("coder approval TTL must be at least 60000ms and no longer than its finalizer lease TTL");
   }
   const coderRoot = requiredProfileValue(coder, "ISOLATED_WORKSPACE_ROOT");
   const qaRoot = requiredProfileValue(qa, "ISOLATED_WORKSPACE_ROOT");
@@ -125,7 +136,14 @@ function validateExecutionTopology(
   if (!inspectImage(image)) throw new Error("qa container image could not be verified locally");
   const qaScript = String(qa.parsed?.QA_NPM_SCRIPT || "test").trim();
   if (!/^[a-zA-Z0-9:_-]+$/.test(qaScript)) throw new Error("QA_NPM_SCRIPT contains unsupported characters");
-  return { mode, executionMode, canonical: realCanonical, isolationRoot: realIsolationRoot, qaImage: image };
+  return {
+    mode,
+    executionMode,
+    canonical: realCanonical,
+    isolationRoot: realIsolationRoot,
+    qaImage: image,
+    finalizerActorId,
+  };
 }
 
 async function preflight(configs, controlDatabaseUrl, { PoolClass = Pool } = {}) {

@@ -21,6 +21,10 @@ const {
 } = require("../../scripts/phase17-control-plane");
 const { loadRoleConfig, validateSixRoleSet } = require("../../src/controlPlane/roleConfig");
 const { parseCommand } = require("../../src/controlPlane/workflowService");
+const {
+  parseApprovalCommand,
+  resolveApprovalCommand,
+} = require("../../src/controlPlane/workflowApprovalService");
 const { resolveControlDatabaseUrl } = require("../../scripts/run-phase17-multibot");
 const { bootRuntime } = require("../../src/controlPlane/runtime");
 const { resolveRuntimeCredential } = require("../../src/channels/runtimeCredentialEnrollment");
@@ -195,11 +199,209 @@ test("operational ingress queues an outbox response and never replies directly",
   assert.equal(calls.some((call) => call.sql.includes("enqueue_manager_notice")), true);
 });
 
+test("approval commands require a bounded node ID and a rejection reason", () => {
+  assert.deepEqual(parseApprovalCommand(parseCommand("!approve node-123")), {
+    approved: true, nodeId: "node-123", reason: null,
+  });
+  assert.deepEqual(parseApprovalCommand(parseCommand("!reject node-123 테스트 실패")), {
+    approved: false, nodeId: "node-123", reason: "테스트 실패",
+  });
+  assert.throws(() => parseApprovalCommand(parseCommand("!reject node-123")), /rejection reason/);
+  assert.throws(() => parseApprovalCommand(parseCommand("!approve ../node")), /valid workflow node ID/);
+});
+
+test("workflow approval is bound to its Discord requester and original channel", async () => {
+  const binding = {
+    workflow_approval_id: 1,
+    workflow_run_id: "run-1",
+    workflow_node_id: "node-1",
+    expected_task_state: "CREATED",
+    expected_task_version: "0",
+    task_id: "task-1",
+    workflow_definition_id: "phase17-default-v1",
+    node_key: "planner",
+    created_by: "user-1",
+    channel_id: "channel-1",
+    terminal_node: false,
+  };
+  let resolvedCall = null;
+  const db = {
+    async query(sql, params) {
+      if (sql.includes("FROM approvals a")) return { rows: [binding] };
+      if (sql.includes("resolve_discord_workflow_approval")) {
+        resolvedCall = { sql, params };
+        return { rows: [{ id: "run-1", status: "RUNNING" }] };
+      }
+      throw new Error(`unexpected query: ${sql}`);
+    },
+  };
+  await assert.rejects(
+    resolveApprovalCommand({
+      parsed: parseCommand("!approve node-1"), managerInstanceId: "manager-01",
+      discordUserId: "intruder", channelId: "channel-1",
+    }, { db }),
+    /restricted to the task requester/
+  );
+  const result = await resolveApprovalCommand({
+    parsed: parseCommand("!approve node-1"), managerInstanceId: "manager-01",
+    discordUserId: "user-1", channelId: "channel-1",
+  }, { db });
+  assert.equal(result.approved, true);
+  assert.equal(result.candidateSettled, false);
+  assert.deepEqual(resolvedCall.params, [
+    "run-1", "node-1", "manager-01", "user-1", "channel-1", true, null,
+  ]);
+});
+
+test("terminal workflow approval settles the exact bound candidate first", async () => {
+  const calls = [];
+  const db = {
+    async query(sql) {
+      if (sql.includes("FROM approvals a")) {
+        return { rows: [{
+          workflow_run_id: "run-1", workflow_node_id: "node-final",
+          expected_task_state: "CREATED", expected_task_version: "1",
+          task_id: "task-1", node_key: "summarizer",
+          created_by: "user-1", channel_id: "channel-1", terminal_node: true,
+        }] };
+      }
+      if (sql.includes("resolve_discord_workflow_approval")) return { rows: [{ id: "run-1", status: "SUCCEEDED" }] };
+      throw new Error(`unexpected query: ${sql}`);
+    },
+  };
+  const result = await resolveApprovalCommand({
+    parsed: parseCommand("!approve node-final"), managerInstanceId: "manager-01",
+    discordUserId: "user-1", channelId: "channel-1",
+  }, {
+    db,
+    approvalService: {
+      async getBoundApprovalDisplay() {
+        return {
+          approvalId: 77, action: "commit_approval_phase16", taskId: "task-1",
+          expectedTaskState: "CREATED", expectedTaskVersion: 1,
+        };
+      },
+    },
+    workspaceWorkflow: {
+      async finalizeApprovedCandidate(input) {
+        calls.push(input);
+        return { reconciliationRequired: false };
+      },
+    },
+  });
+  assert.deepEqual(calls, [{ approvalId: 77, resolvedBy: "user-1", actorId: "manager-01" }]);
+  assert.equal(result.candidateSettled, true);
+});
+
+test("terminal workflow rejection settles and cleans the bound candidate first", async () => {
+  const calls = [];
+  let resolutionParams = null;
+  const db = {
+    async query(sql, params) {
+      if (sql.includes("FROM approvals a")) {
+        return { rows: [{
+          workflow_run_id: "run-1", workflow_node_id: "node-final",
+          expected_task_state: "CREATED", expected_task_version: "1",
+          task_id: "task-1", node_key: "summarizer",
+          created_by: "user-1", channel_id: "channel-1", terminal_node: true,
+        }] };
+      }
+      if (sql.includes("resolve_discord_workflow_approval")) {
+        resolutionParams = params;
+        return { rows: [{ id: "run-1", status: "REJECTED" }] };
+      }
+      throw new Error(`unexpected query: ${sql}`);
+    },
+  };
+  const result = await resolveApprovalCommand({
+    parsed: parseCommand("!reject node-final QA 실패"), managerInstanceId: "manager-01",
+    discordUserId: "user-1", channelId: "channel-1",
+  }, {
+    db,
+    approvalService: {
+      async getBoundApprovalDisplay() {
+        return {
+          approvalId: 78, action: "commit_approval_phase16", taskId: "task-1",
+          expectedTaskState: "CREATED", expectedTaskVersion: 1,
+        };
+      },
+    },
+    workspaceWorkflow: {
+      async rejectCandidateApproval(input) {
+        calls.push(input);
+        return { reconciliationRequired: false };
+      },
+    },
+  });
+  assert.deepEqual(calls, [{ approvalId: 78, resolvedBy: "user-1", reason: "QA 실패" }]);
+  assert.deepEqual(resolutionParams, [
+    "run-1", "node-final", "manager-01", "user-1", "channel-1", false, "QA 실패",
+  ]);
+  assert.equal(result.workflowRun.status, "REJECTED");
+});
+
+test("terminal workflow approval fails closed on a mismatched bound candidate", async () => {
+  const db = {
+    async query(sql) {
+      if (sql.includes("FROM approvals a")) {
+        return { rows: [{
+          workflow_run_id: "run-1", workflow_node_id: "node-final",
+          expected_task_state: "CREATED", expected_task_version: "2",
+          task_id: "task-1", node_key: "summarizer",
+          created_by: "user-1", channel_id: "channel-1", terminal_node: true,
+        }] };
+      }
+      throw new Error("workflow resolution must not run");
+    },
+  };
+  await assert.rejects(
+    resolveApprovalCommand({
+      parsed: parseCommand("!approve node-final"), managerInstanceId: "manager-01",
+      discordUserId: "user-1", channelId: "channel-1",
+    }, {
+      db,
+      approvalService: {
+        async getBoundApprovalDisplay() {
+          return {
+            approvalId: 77, action: "commit_approval_phase16", taskId: "task-1",
+            expectedTaskState: "CREATED", expectedTaskVersion: 1,
+          };
+        },
+      },
+    }),
+    /does not match the terminal workflow approval/
+  );
+});
+
+test("approval ingress queues an audited Korean acknowledgement", async () => {
+  const queries = [];
+  const ingress = createManagerIngress({
+    config: { role: "manager", instanceId: "manager-01" },
+    db: { async query(sql, params) { queries.push({ sql, params }); return { rows: [{}] }; } },
+    async resolveApprovalCommand(input) {
+      assert.equal(input.discordUserId, "user-1");
+      return { approved: true, taskId: "task-1", nodeId: "node-1" };
+    },
+  });
+  const result = await ingress({
+    id: "message-approve", content: "!approve node-1", channelId: "channel-1",
+    author: { id: "user-1", bot: false }, webhookId: null, system: false,
+  });
+  assert.equal(result.approval, true);
+  assert.match(queries[0].params[3], /승인 처리했습니다/);
+});
+
 test("publication markers are deterministic and do not expose secrets", () => {
   const event = { id: "o1", correlation_id: "c1", event_type: "COMMAND_ACCEPTED", payload_json: { taskId: "t1" } };
   const marker = publication.markerFor(event);
   assert.equal(marker, "ai-manager:c1:o1");
   assert.match(publication.render(event, marker), /작업을 접수했습니다/);
+  const approval = {
+    id: "o2", correlation_id: "c2", event_type: "APPROVAL_REQUIRED",
+    payload_json: { taskId: "t1", nodeId: "node-1" },
+  };
+  assert.match(publication.render(approval, publication.markerFor(approval)), /!approve node-1/);
+  assert.match(publication.render(approval, publication.markerFor(approval)), /!reject node-1/);
   assert.doesNotMatch(publication.render(event, marker), /DATABASE_URL|TOKEN/);
 });
 
@@ -451,7 +653,7 @@ test("readiness reports missing principals, credentials, and instances without s
   const database = {
     async query(sql) {
       if (sql.includes("FROM delivery_phases")) return { rows: [{ id: "phase-16", status: "ACCEPTED" }, { id: "phase-17", status: "IN_PROGRESS" }] };
-      if (sql.includes("FROM schema_migrations")) return { rows: [{ id: "018_durable_control_plane" }, { id: "019_phase17_credential_enrollment" }, { id: "020_phase17_operator_reconciliation" }] };
+      if (sql.includes("FROM schema_migrations")) return { rows: [{ id: "018_durable_control_plane" }, { id: "019_phase17_credential_enrollment" }, { id: "020_phase17_operator_reconciliation" }, { id: "021_phase17_workflow_approvals" }] };
       if (sql.includes("FROM bot_role_principals")) return { rows: [] };
       if (sql.includes("FROM channel_credentials")) return { rows: [{ active_credentials: 0, distinct_fingerprints: 0, missing_fingerprints: 0 }] };
       if (sql.includes("FROM workflow_definitions")) return { rows: [{ count: 6 }] };
@@ -543,6 +745,6 @@ test("rollback fails closed for live workflows and undelivered outbox events", a
     migrate: async (id, options) => ({ id, options }),
   });
   assert.equal(queryIndex, 2);
-  assert.deepEqual(result.map(({ id }) => id), ["020_phase17_operator_reconciliation", "019_phase17_credential_enrollment", "018_durable_control_plane"]);
+  assert.deepEqual(result.map(({ id }) => id), ["021_phase17_workflow_approvals", "020_phase17_operator_reconciliation", "019_phase17_credential_enrollment", "018_durable_control_plane"]);
   assert.equal(result.every(({ options }) => options.allowDestructive), true);
 });

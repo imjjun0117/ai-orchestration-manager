@@ -86,6 +86,7 @@ if (!enabled) {
     await migrateUp("018_durable_control_plane", { pool });
     await migrateUp("019_phase17_credential_enrollment", { pool });
     await migrateUp("020_phase17_operator_reconciliation", { pool });
+    await migrateUp("021_phase17_workflow_approvals", { pool });
     phase17Applied = true;
     for (const role of ["manager", "planner", "coder", "reviewer", "qa", "summarizer"]) {
       await register(role, `${role === "manager" ? "manager" : role}-01`);
@@ -95,6 +96,7 @@ if (!enabled) {
   after(async () => {
     if (pool) {
       if (phase17Applied) {
+        await migrateDown("021_phase17_workflow_approvals", { pool, allowDestructive: true }).catch(() => {});
         await migrateDown("020_phase17_operator_reconciliation", { pool, allowDestructive: true }).catch(() => {});
         await migrateDown("019_phase17_credential_enrollment", { pool, allowDestructive: true }).catch(() => {});
         await migrateDown("018_durable_control_plane", { pool, allowDestructive: true }).catch(() => {});
@@ -242,7 +244,17 @@ if (!enabled) {
       [run.id, planner.workflow_node_id]
     )).rows[0].count, 1);
     await bind("manager");
-    run = (await pool.query("SELECT * FROM resolve_workflow_approval($1,$2,'manager-01',TRUE,'approved')", [run.id, planner.workflow_node_id])).rows[0];
+    await assert.rejects(
+      pool.query(
+        "SELECT * FROM resolve_discord_workflow_approval($1,$2,'manager-01','intruder','channel',TRUE,'approved')",
+        [run.id, planner.workflow_node_id]
+      ),
+      /requester or channel binding changed/
+    );
+    run = (await pool.query(
+      "SELECT * FROM resolve_discord_workflow_approval($1,$2,'manager-01','user','channel',TRUE,'approved')",
+      [run.id, planner.workflow_node_id]
+    )).rows[0];
     assert.equal(run.status, "RUNNING");
     const coder = await claim("coder", "coder-01");
     assert.equal(coder.target_role, "coder");
@@ -256,10 +268,173 @@ if (!enabled) {
       if (role === "summarizer") {
         assert.equal(run.status, "WAITING_APPROVAL");
         await bind("manager");
-        run = (await pool.query("SELECT * FROM resolve_workflow_approval($1,$2,'manager-01',TRUE,'done')", [run.id, job.workflow_node_id])).rows[0];
+        run = (await pool.query(
+          "SELECT * FROM resolve_discord_workflow_approval($1,$2,'manager-01','user','channel',TRUE,'done')",
+          [run.id, job.workflow_node_id]
+        )).rows[0];
       }
     }
     assert.equal(run.status, "SUCCEEDED");
+    assert.equal((await pool.query(
+      "SELECT approved_by FROM approvals WHERE workflow_run_id=$1 AND workflow_node_id=$2",
+      [run.id, planner.workflow_node_id]
+    )).rows[0].approved_by, "user");
+  });
+
+  test("coder-only workflow requires approval after candidate creation", async () => {
+    const graph = (await pool.query(
+      "SELECT graph_json FROM workflow_definitions WHERE id='phase17-coder-v1'"
+    )).rows[0].graph_json;
+    assert.equal(graph.nodes[0].requiresApprovalAfter, true);
+  });
+
+  test("terminal Discord approval accepts only a fully finalized bound candidate version", async () => {
+    const accepted = await receive("candidate-handoff", "candidate-handoff", "phase17-summarizer-v1");
+    const summarizer = await claim("summarizer", "summarizer-01");
+    await complete("summarizer", "summarizer-01", summarizer);
+    let run = await advance(accepted.accepted_workflow_run_id, summarizer.workflow_node_id);
+    assert.equal(run.status, "WAITING_APPROVAL");
+
+    const baseSha = "1".repeat(40);
+    const candidateSha = "2".repeat(40);
+    const artifactHash = `sha256:${"3".repeat(64)}`;
+    const contextHash = `sha256:${"4".repeat(64)}`;
+    await pool.query("INSERT INTO workspace_lock_heads(workspace_id,current_fencing_token) VALUES ('canonical:candidate-handoff',1)");
+    await pool.query(
+      `INSERT INTO workspace_leases(
+         lease_id,workspace_id,lease_owner_instance_id,lease_owner_task_id,
+         lease_owner_operation_id,fencing_token,mode,expires_at,released_at
+       ) VALUES (
+         'lease-candidate-handoff','canonical:candidate-handoff','manager-01',$1,
+         'finalize-candidate-handoff',1,'FINALIZE_EXCLUSIVE',CURRENT_TIMESTAMP + INTERVAL '1 hour',CURRENT_TIMESTAMP
+       )`,
+      [accepted.accepted_task_id]
+    );
+    await pool.query(
+      `INSERT INTO isolated_workspaces(
+         id,task_id,workspace_id,lease_id,lease_owner_operation_id,
+         canonical_repository_path,workspace_path,base_commit_sha,candidate_commit_sha,status
+       ) VALUES (
+         'workspace-candidate-handoff',$1,'isolated:candidate-handoff','lease-candidate-handoff',
+         'finalize-candidate-handoff','/tmp/canonical.git','/tmp/candidate',$2,$3,'CANDIDATE_READY'
+       )`,
+      [accepted.accepted_task_id, baseSha, candidateSha]
+    );
+    await pool.query(
+      `INSERT INTO artifacts(
+         id,task_id,workspace_id,isolated_workspace_id,artifact_type,artifact_hash,
+         context_manifest_hash,base_commit_sha,candidate_commit_sha,manifest_json,file_manifest_json,created_by
+       ) VALUES (
+         'artifact-candidate-handoff',$1,'isolated:candidate-handoff','workspace-candidate-handoff',
+         'CANDIDATE_COMMIT',$2,$3,$4,$5,'{}'::jsonb,'[]'::jsonb,'coder-01'
+       )`,
+      [accepted.accepted_task_id, artifactHash, contextHash, baseSha, candidateSha]
+    );
+    const candidateApproval = (await pool.query(
+      `INSERT INTO approvals(
+         task_id,action,status,requested_by,approved_by,artifact_id,artifact_hash,
+         context_manifest_hash,base_commit_sha,candidate_commit_sha,workspace_id,
+         lease_owner_operation_id,fencing_token,delegation_scope,
+         expected_task_state,expected_task_version,expires_at
+       ) VALUES (
+         $1,'commit_approval_phase16','APPROVED','coder-01','user','artifact-candidate-handoff',$2,
+         $3,$4,$5,'canonical:candidate-handoff','finalize-candidate-handoff',1,
+         '{"allowedActorIds":["manager-01"],"allowedTargetRefs":["refs/heads/main"]}'::jsonb,
+         'CREATED',0,CURRENT_TIMESTAMP + INTERVAL '1 hour'
+       ) RETURNING id`,
+      [accepted.accepted_task_id, artifactHash, contextHash, baseSha, candidateSha]
+    )).rows[0];
+    await pool.query(
+      `INSERT INTO workspace_finalizations(
+         id,approval_id,task_id,artifact_id,workspace_id,lease_id,lease_owner_operation_id,
+         fencing_token,base_commit_sha,candidate_commit_sha,artifact_hash,context_manifest_hash,
+         target_ref,claim_token,status,claimed_by,integrated_commit_sha,completed_at
+       ) VALUES (
+         'finalization-candidate-handoff',$1,$2,'artifact-candidate-handoff','canonical:candidate-handoff',
+         'lease-candidate-handoff','finalize-candidate-handoff',1,$3,$4,$5,$6,
+         'refs/heads/main','claim-candidate-handoff','SUCCEEDED','manager-01',$4,CURRENT_TIMESTAMP
+       )`,
+      [candidateApproval.id, accepted.accepted_task_id, baseSha, candidateSha, artifactHash, contextHash]
+    );
+    await pool.query("UPDATE isolated_workspaces SET status='CLEANED', cleaned_at=CURRENT_TIMESTAMP WHERE id='workspace-candidate-handoff'");
+    await pool.query("UPDATE tasks SET status='DONE', row_version=row_version+1 WHERE id=$1", [accepted.accepted_task_id]);
+
+    await bind("manager");
+    run = (await pool.query(
+      "SELECT * FROM resolve_discord_workflow_approval($1,$2,'manager-01','user','channel',TRUE,'done')",
+      [run.id, summarizer.workflow_node_id]
+    )).rows[0];
+    assert.equal(run.status, "SUCCEEDED");
+    const task = (await pool.query("SELECT status,lifecycle_status FROM tasks WHERE id=$1", [accepted.accepted_task_id])).rows[0];
+    assert.deepEqual(task, { status: "DONE", lifecycle_status: "SUCCEEDED" });
+  });
+
+  test("terminal Discord rejection accepts only a cleaned rejected bound candidate version", async () => {
+    const accepted = await receive("candidate-rejection", "candidate-rejection", "phase17-summarizer-v1");
+    const summarizer = await claim("summarizer", "summarizer-01");
+    await complete("summarizer", "summarizer-01", summarizer);
+    let run = await advance(accepted.accepted_workflow_run_id, summarizer.workflow_node_id);
+    assert.equal(run.status, "WAITING_APPROVAL");
+
+    const baseSha = "5".repeat(40);
+    const candidateSha = "6".repeat(40);
+    const artifactHash = `sha256:${"7".repeat(64)}`;
+    const contextHash = `sha256:${"8".repeat(64)}`;
+    await pool.query("INSERT INTO workspace_lock_heads(workspace_id,current_fencing_token) VALUES ('canonical:candidate-rejection',1)");
+    await pool.query(
+      `INSERT INTO workspace_leases(
+         lease_id,workspace_id,lease_owner_instance_id,lease_owner_task_id,
+         lease_owner_operation_id,fencing_token,mode,expires_at,released_at
+       ) VALUES (
+         'lease-candidate-rejection','canonical:candidate-rejection','manager-01',$1,
+         'finalize-candidate-rejection',1,'FINALIZE_EXCLUSIVE',CURRENT_TIMESTAMP + INTERVAL '1 hour',CURRENT_TIMESTAMP
+       )`,
+      [accepted.accepted_task_id]
+    );
+    await pool.query(
+      `INSERT INTO isolated_workspaces(
+         id,task_id,workspace_id,lease_id,lease_owner_operation_id,
+         canonical_repository_path,workspace_path,base_commit_sha,candidate_commit_sha,status,cleaned_at
+       ) VALUES (
+         'workspace-candidate-rejection',$1,'isolated:candidate-rejection','lease-candidate-rejection',
+         'finalize-candidate-rejection','/tmp/canonical.git','/tmp/candidate',$2,$3,'CLEANED',CURRENT_TIMESTAMP
+       )`,
+      [accepted.accepted_task_id, baseSha, candidateSha]
+    );
+    await pool.query(
+      `INSERT INTO artifacts(
+         id,task_id,workspace_id,isolated_workspace_id,artifact_type,artifact_hash,
+         context_manifest_hash,base_commit_sha,candidate_commit_sha,manifest_json,file_manifest_json,created_by
+       ) VALUES (
+         'artifact-candidate-rejection',$1,'isolated:candidate-rejection','workspace-candidate-rejection',
+         'CANDIDATE_COMMIT',$2,$3,$4,$5,'{}'::jsonb,'[]'::jsonb,'coder-01'
+       )`,
+      [accepted.accepted_task_id, artifactHash, contextHash, baseSha, candidateSha]
+    );
+    await pool.query(
+      `INSERT INTO approvals(
+         task_id,action,status,requested_by,approved_by,reason,artifact_id,artifact_hash,
+         context_manifest_hash,base_commit_sha,candidate_commit_sha,workspace_id,
+         lease_owner_operation_id,fencing_token,delegation_scope,
+         expected_task_state,expected_task_version,expires_at
+       ) VALUES (
+         $1,'commit_approval_phase16','REJECTED','coder-01','user','QA 실패','artifact-candidate-rejection',$2,
+         $3,$4,$5,'canonical:candidate-rejection','finalize-candidate-rejection',1,
+         '{"allowedActorIds":["manager-01"],"allowedTargetRefs":["refs/heads/main"]}'::jsonb,
+         'CREATED',0,CURRENT_TIMESTAMP + INTERVAL '1 hour'
+       )`,
+      [accepted.accepted_task_id, artifactHash, contextHash, baseSha, candidateSha]
+    );
+    await pool.query("UPDATE tasks SET status='REJECTED', row_version=row_version+1 WHERE id=$1", [accepted.accepted_task_id]);
+
+    await bind("manager");
+    run = (await pool.query(
+      "SELECT * FROM resolve_discord_workflow_approval($1,$2,'manager-01','user','channel',FALSE,'QA 실패')",
+      [run.id, summarizer.workflow_node_id]
+    )).rows[0];
+    assert.equal(run.status, "REJECTED");
+    const task = (await pool.query("SELECT status,lifecycle_status FROM tasks WHERE id=$1", [accepted.accepted_task_id])).rows[0];
+    assert.deepEqual(task, { status: "REJECTED", lifecycle_status: "REJECTED" });
   });
 
   test("expired safe lease retries, stale completion is rejected, and unsafe coder lease reconciles", async () => {
@@ -655,6 +830,7 @@ if (!enabled) {
 
   test("down/up rollback preserves legacy tasks and reapplies cleanly", async () => {
     await pool.query("INSERT INTO tasks(id,title,original_request,status) VALUES ('legacy-phase17','legacy','legacy','DONE')");
+    await migrateDown("021_phase17_workflow_approvals", { pool, allowDestructive: true });
     await migrateDown("020_phase17_operator_reconciliation", { pool, allowDestructive: true });
     await migrateDown("019_phase17_credential_enrollment", { pool, allowDestructive: true });
     await migrateDown("018_durable_control_plane", { pool, allowDestructive: true });
@@ -664,6 +840,7 @@ if (!enabled) {
     await migrateUp("018_durable_control_plane", { pool });
     await migrateUp("019_phase17_credential_enrollment", { pool });
     await migrateUp("020_phase17_operator_reconciliation", { pool });
+    await migrateUp("021_phase17_workflow_approvals", { pool });
     phase17Applied = true;
     assert.equal((await pool.query("SELECT status FROM tasks WHERE id='legacy-phase17'")).rows[0].status, "DONE");
   });

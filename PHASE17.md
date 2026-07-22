@@ -86,7 +86,9 @@ npm run launchd:phase17 -- verify "$HOME/Library/LaunchAgents/com.ai-manager.pha
 
 서비스 전환 때는 먼저 기존 터미널 supervisor에 `SIGTERM`을 보내 여섯 인스턴스가 모두 `OFFLINE`인지 확인한 후 LaunchAgent를 등록해야 합니다. 중복 실행은 허용하지 않습니다. 설정 변경은 LaunchAgent를 `bootout`한 상태에서 역할 프로필에 적용하고 다시 `bootstrap`합니다.
 
-실운영 전환은 여섯 프로필의 `MULTIBOT_ROLE_MODE=enforced`, `ROLE_WORKER_EXECUTION=active`를 함께 사용합니다. runner는 여섯 프로필의 모드가 하나라도 다르면 기동 전에 거부합니다. Coder/QA에는 같은 절대경로의 `ISOLATED_WORKSPACE_ROOT`, `ISOLATED_WORKSPACE_MODE=true`, `CODER_WRITE_ENABLED=true`가 필요하고 root 권한은 정확히 `0700`이어야 합니다.
+실운영 전환은 여섯 프로필의 `MULTIBOT_ROLE_MODE=enforced`, `ROLE_WORKER_EXECUTION=active`를 함께 사용합니다. runner는 여섯 프로필의 모드가 하나라도 다르면 기동 전에 거부합니다. Manager/Coder/QA에는 `ISOLATED_WORKSPACE_MODE=true`, `CODER_WRITE_ENABLED=true`가 필요합니다. Coder/QA는 같은 절대경로의 `ISOLATED_WORKSPACE_ROOT`를 사용하고 root 권한은 정확히 `0700`이어야 합니다.
+
+Coder 프로필의 `FINALIZER_ACTOR_ID`는 Manager의 `BOT_INSTANCE_ID`와 정확히 같아야 합니다. `CANDIDATE_APPROVAL_TTL_MS`는 최소 60000ms, `FINALIZER_LEASE_TTL_MS`는 그 이상이어야 하며 운영 기본값은 둘 다 86400000ms입니다. 이 바인딩은 Coder가 만든 후보를 다른 인스턴스가 최종화하지 못하게 하고, 전체 검토·QA·요약 동안 승인과 fencing lease가 유지되게 합니다.
 
 Coder 프로필의 `WORKSPACE_DIR`는 백업된 bare canonical repository여야 하며 non-bare working copy는 거부됩니다. QA 프로필은 `ISOLATED_SANDBOX_BACKEND=container`, 로컬에 존재하는 고정 `SANDBOX_CONTAINER_IMAGE`, 선택적 `QA_NPM_SCRIPT`를 사용합니다. QA는 등록된 task workspace 하나만 read-write mount하고 network, root filesystem, capabilities를 차단한 컨테이너에서 실행되며 host `npm` fallback은 없습니다.
 
@@ -99,6 +101,13 @@ git clone --bare --no-local /absolute/path/to/ai-manager \
 ```
 
 `.dockerignore`는 build context를 Dockerfile과 `package.json`/`package-lock.json`으로 제한해 `.env` 및 역할 프로필이 daemon으로 전달되지 않게 합니다. runtime 프로필에는 mutable tag보다 위 inspect가 반환한 `sha256:...` image ID를 저장합니다. 전환 후 `npm run phase17 -- readiness`가 blocker 없이 통과한 다음 비중요 사용자 작업 한 건으로 전체 흐름을 확인합니다.
+
+승인이 필요한 노드가 끝나면 Manager가 원래 작업 채널에 정확한 node ID와 함께 명령을 게시합니다. 작업을 처음 요청한 Discord 사용자만 같은 채널에서 아래 명령을 실행할 수 있습니다. 최종 승인에서는 Phase 16의 artifact/hash/commit/fencing 바인딩을 검증한 후보만 bare 기준 저장소에 반영하고, 워크스페이스 정리까지 성공한 뒤 워크플로를 `SUCCEEDED`로 전이합니다.
+
+```text
+!approve node-...
+!reject node-... 반려 사유
+```
 
 ## 역할별 Discord 발신 ID 검증
 

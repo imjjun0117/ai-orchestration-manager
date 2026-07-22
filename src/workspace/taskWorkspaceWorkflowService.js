@@ -357,6 +357,7 @@ async function approvalExecutionContext(approvalId, { db = defaultDb } = {}) {
             a.id AS artifact_id, a.base_commit_sha, a.candidate_commit_sha,
             a.artifact_hash, a.context_manifest_hash,
             w.id AS isolated_workspace_id, w.canonical_repository_path, w.workspace_path,
+            w.status AS isolated_workspace_status, w.cleanup_error AS isolated_workspace_cleanup_error,
             w.metadata_json AS workspace_metadata_json,
             w.lease_id AS isolated_lease_id,
             wl.lease_owner_instance_id AS isolated_owner_instance_id,
@@ -382,6 +383,51 @@ async function approvalExecutionContext(approvalId, { db = defaultDb } = {}) {
   return rows[0];
 }
 
+async function settleCandidateTaskAndWorkspace(
+  { context, taskStatus },
+  { db = defaultDb } = {}
+) {
+  let task = await getTaskSnapshot(context.task_id, { db });
+  if (task.status === context.expected_task_state
+      && Number(task.row_version) === Number(context.expected_task_version)) {
+    const transitioned = await db.query(
+      `UPDATE tasks
+       SET status = $4, control_state = 'RUNNING', row_version = row_version + 1,
+           updated_at = CURRENT_TIMESTAMP
+       WHERE id = $1 AND status = $2 AND row_version = $3
+       RETURNING *`,
+      [context.task_id, context.expected_task_state, context.expected_task_version, taskStatus]
+    );
+    task = transitioned.rows[0] || await getTaskSnapshot(context.task_id, { db });
+  }
+  const taskSettled = task.status === taskStatus
+    && Number(task.row_version) === Number(context.expected_task_version) + 1;
+
+  let cleanup = null;
+  let cleanupError = null;
+  const workspace = await db.query(
+    "SELECT status FROM isolated_workspaces WHERE id = $1",
+    [context.isolated_workspace_id]
+  );
+  if (workspace.rows[0]?.status !== "CLEANED") {
+    try {
+      cleanup = await isolatedWorkspaceService.cleanupIsolatedWorkspace({
+        isolatedWorkspaceId: context.isolated_workspace_id,
+        ownerInstanceId: context.isolated_owner_instance_id,
+        ownerOperationId: context.isolated_owner_operation_id,
+      }, { db, isolationRoot: context.workspace_metadata_json.isolationRoot });
+    } catch (error) {
+      cleanupError = error.message;
+    }
+  }
+  return {
+    task,
+    cleanup,
+    reconciliationRequired: !taskSettled || Boolean(cleanupError),
+    cleanupError,
+  };
+}
+
 async function finalizeApprovedCandidate(
   { approvalId, resolvedBy, actorId, targetRef = null },
   { db = defaultDb, env = process.env } = {}
@@ -399,14 +445,11 @@ async function finalizeApprovedCandidate(
       [display.finalization.id]
     );
     if (existing.rows[0] && existing.rows[0].status === "SUCCEEDED") {
-      const task = await getTaskSnapshot(display.taskId, { db });
-      const reconciliationRequired = task.status !== "DONE" || existing.rows[0].isolated_workspace_status !== "CLEANED";
+      const context = await approvalExecutionContext(approvalId, { db });
+      const settlement = await settleCandidateTaskAndWorkspace({ context, taskStatus: "DONE" }, { db });
       return {
         finalization: existing.rows[0],
-        task,
-        cleanup: null,
-        reconciliationRequired,
-        cleanupError: null,
+        ...settlement,
         alreadyCompleted: true,
       };
     }
@@ -454,31 +497,10 @@ async function finalizeApprovedCandidate(
     canonicalRepository: context.canonical_repository_path,
     targetRef: chosenRef,
   }, { db, env });
-  const taskTransition = await db.query(
-    `UPDATE tasks
-     SET status = 'DONE', control_state = 'RUNNING', row_version = row_version + 1,
-         updated_at = CURRENT_TIMESTAMP
-     WHERE id = $1 AND status = $2 AND row_version = $3
-     RETURNING *`,
-    [context.task_id, context.expected_task_state, context.expected_task_version]
-  );
-  let cleanup = null;
-  let cleanupError = null;
-  try {
-    cleanup = await isolatedWorkspaceService.cleanupIsolatedWorkspace({
-      isolatedWorkspaceId: context.isolated_workspace_id,
-      ownerInstanceId: context.isolated_owner_instance_id,
-      ownerOperationId: context.isolated_owner_operation_id,
-    }, { db, isolationRoot: context.workspace_metadata_json.isolationRoot });
-  } catch (error) {
-    cleanupError = error.message;
-  }
+  const settlement = await settleCandidateTaskAndWorkspace({ context, taskStatus: "DONE" }, { db });
   return {
     finalization: finalized,
-    task: taskTransition.rows[0] || null,
-    cleanup,
-    reconciliationRequired: !taskTransition.rows[0] || Boolean(cleanupError),
-    cleanupError,
+    ...settlement,
   };
 }
 
@@ -486,32 +508,32 @@ async function rejectCandidateApproval(
   { approvalId, resolvedBy, reason = "candidate rejected" },
   { db = defaultDb } = {}
 ) {
-  const { resolved, display } = await approvalService.resolveDisplayedBoundApproval({
-    approvalId,
-    approved: false,
-    resolvedBy,
-    reason,
-  }, { db });
+  const display = await approvalService.getBoundApprovalDisplay({ approvalId }, { db });
+  if (!display) throw new Error("bound approval does not exist");
+  let resolved;
+  if (display.status === "PENDING") {
+    ({ resolved } = await approvalService.resolveDisplayedBoundApproval({
+      approvalId,
+      approved: false,
+      resolvedBy,
+      reason,
+    }, { db }));
+  } else if (display.status === "REJECTED") {
+    resolved = { id: approvalId, status: "REJECTED" };
+  } else {
+    throw new Error(`approval cannot be rejected from status ${display.status}`);
+  }
   const context = await approvalExecutionContext(approvalId, { db });
-  await workspaceLeaseService.releaseLease({
-    leaseId: context.finalizer_lease_id,
-    ownerInstanceId: context.finalizer_owner_instance_id,
-    ownerOperationId: context.finalizer_owner_operation_id,
-    fencingToken: context.finalizer_fencing_token,
-  }, { db });
-  const task = await db.query(
-    `UPDATE tasks
-     SET status = 'REJECTED', row_version = row_version + 1, updated_at = CURRENT_TIMESTAMP
-     WHERE id = $1 AND status = $2 AND row_version = $3
-     RETURNING *`,
-    [display.taskId, display.expectedTaskState, display.expectedTaskVersion]
-  );
-  const cleanup = await isolatedWorkspaceService.cleanupIsolatedWorkspace({
-    isolatedWorkspaceId: context.isolated_workspace_id,
-    ownerInstanceId: context.isolated_owner_instance_id,
-    ownerOperationId: context.isolated_owner_operation_id,
-  }, { db, isolationRoot: context.workspace_metadata_json.isolationRoot });
-  return { approval: resolved, task: task.rows[0] || null, cleanup };
+  if (!context.finalizer_released_at) {
+    await workspaceLeaseService.releaseLease({
+      leaseId: context.finalizer_lease_id,
+      ownerInstanceId: context.finalizer_owner_instance_id,
+      ownerOperationId: context.finalizer_owner_operation_id,
+      fencingToken: context.finalizer_fencing_token,
+    }, { db });
+  }
+  const settlement = await settleCandidateTaskAndWorkspace({ context, taskStatus: "REJECTED" }, { db });
+  return { approval: resolved, ...settlement };
 }
 
 module.exports = {
@@ -527,5 +549,6 @@ module.exports = {
   prepareTaskWorkspace,
   rejectCandidateApproval,
   runCoderStage,
+  settleCandidateTaskAndWorkspace,
   transitionTaskState,
 };

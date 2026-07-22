@@ -3,7 +3,7 @@ const crypto = require("node:crypto");
 const ROLES = Object.freeze(["manager", "planner", "coder", "reviewer", "qa", "summarizer"]);
 const MODES = Object.freeze(["off", "shadow", "enforced"]);
 const ROLE_DEFINITIONS = Object.freeze({
-  manager: { displayName: "AI Manager", engine: "orchestrator", commands: ["!task", "!autotask", "!team", "!health", "!roles", "!instance"] },
+  manager: { displayName: "AI Manager", engine: "orchestrator", commands: ["!task", "!autotask", "!approve", "!reject", "!team", "!health", "!roles", "!instance"] },
   planner: { displayName: "AI Planner", engine: "claude", commands: ["!pm"] },
   coder: { displayName: "AI Coder", engine: "codex", commands: ["!coder"] },
   reviewer: { displayName: "AI Reviewer", engine: "gemini", commands: ["!reviewer"] },

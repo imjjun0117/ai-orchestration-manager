@@ -15,7 +15,11 @@ function render(event, marker) {
     : event.event_type === "COMMAND_ACCEPTED"
       ? `작업을 접수했습니다. task=${payload.taskId}`
       : event.event_type === "APPROVAL_REQUIRED"
-      ? `승인이 필요합니다. task=${payload.taskId} node=${payload.nodeId}`
+      ? [
+        `승인이 필요합니다. task=${payload.taskId} node=${payload.nodeId}`,
+        `승인: !approve ${payload.nodeId}`,
+        `반려: !reject ${payload.nodeId} <사유>`,
+      ].join("\n")
       : event.event_type === "WORKFLOW_SUCCEEDED"
         ? `작업이 완료되었습니다. task=${payload.taskId}`
         : JSON.stringify(result);

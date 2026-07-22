@@ -24,6 +24,7 @@ const PHASE17_MIGRATIONS = Object.freeze([
   "018_durable_control_plane",
   "019_phase17_credential_enrollment",
   "020_phase17_operator_reconciliation",
+  "021_phase17_workflow_approvals",
 ]);
 
 const ROLE_PROFILES = Object.freeze(ROLES.map((role) => Object.freeze({
@@ -62,7 +63,8 @@ function commonFunctions() {
 function roleFunctions(role) {
   if (role === "manager") return [
     "receive_discord_command(TEXT,TEXT,TEXT,TEXT,TEXT,VARCHAR,TEXT,TEXT,TEXT,TEXT,TEXT,TEXT,TEXT)",
-    "advance_workflow_node(TEXT,TEXT,TEXT)", "resolve_workflow_approval(TEXT,TEXT,TEXT,BOOLEAN,TEXT)",
+    "advance_workflow_node(TEXT,TEXT,TEXT)",
+    "resolve_discord_workflow_approval(TEXT,TEXT,TEXT,TEXT,TEXT,BOOLEAN,TEXT)",
     "enqueue_manager_notice(TEXT,TEXT,TEXT,TEXT,TEXT)", "recover_phase17_control_plane(TEXT)",
     "claim_candidate_finalization(TEXT,BIGINT,TEXT,TEXT,TEXT,TEXT,BIGINT,TEXT,TEXT,TEXT,TEXT,TEXT,TEXT,TEXT)",
     "complete_candidate_finalization(TEXT,TEXT,TEXT,TEXT,TEXT,TEXT)",
@@ -102,9 +104,9 @@ async function provisionOnClient(client, principal, role, { verifyExists = true 
   await client.query(`GRANT SELECT (id, channel_id, status, row_version, original_request) ON tasks TO ${quoted}`);
   await client.query(`GRANT SELECT, INSERT, UPDATE ON discord_publications TO ${quoted}`);
   if (role === "manager") {
-    await client.query(`GRANT SELECT ON bot_instances, role_jobs, workflow_runs, workflow_nodes, tasks TO ${quoted}`);
+    await client.query(`GRANT SELECT ON bot_instances, role_jobs, workflow_definitions, workflow_runs, workflow_nodes, tasks TO ${quoted}`);
     await client.query(`GRANT SELECT, INSERT, UPDATE ON approvals, artifacts, isolated_workspaces, workspace_safety_events TO ${quoted}`);
-    await client.query(`GRANT SELECT ON workspace_leases, workspace_lock_heads, delivery_phases TO ${quoted}`);
+    await client.query(`GRANT SELECT ON workspace_finalizations, workspace_leases, workspace_lock_heads, delivery_phases TO ${quoted}`);
   } else {
     await client.query(`GRANT INSERT ON artifacts TO ${quoted}`);
     await client.query(`GRANT SELECT ON artifacts TO ${quoted}`);
