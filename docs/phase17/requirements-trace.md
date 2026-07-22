@@ -18,4 +18,4 @@
 | ARC-001 transactional outbox | workflow transitions and outbox rows in stored procedures; operator retry resets publication for marker re-check | outbox single claim, uncertain delivery, shadow projection, audited retry/dead-letter tests |
 | ARC-002 state/version invariant | node/run status checks, immutable events, Manager-only advancement | approval redelivery and stale completion tests |
 | ARC-003 workspace fencing | Phase 16 isolated workspace gateway used by Coder/QA executor | Phase 16 database/container regression suites |
-| DEL-001..010 delivery governance | existing Phase 15 submission/validation/Gate control plane | Phase 17 candidate commit `85ec8da` pushed; delivery Gate remains pending |
+| DEL-001..010 delivery governance | existing Phase 15 submission/validation/Gate control plane | candidate `5cef762c5d8ae2aeff37626d5caa84fec048e800`, sealed submission `phase17-submission-round-1`, Antigravity planning `APPROVED`, Claude Opus 4.8 development `APPROVED`, final Gate `ACCEPTED` |

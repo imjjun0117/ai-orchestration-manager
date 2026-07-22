@@ -27,6 +27,19 @@ Enrollment verification covers the `node bot.js` six-role bulk wizard plus direc
 - Claude Opus 4.8: selected by explicit user instruction after Fable repeatedly returned usage-credit HTTP 429. Its first read-only development review returned `PASS` with no code findings. All five requirement-implied coverage cases were added, and its fresh revalidation returned `PASS` with every prior observation resolved, no new findings, and no missing tests. Residuals are the disposable suite's intentional sequential shared-DB setup and its explicit `PHASE17_DB_TEST=1` gate; the suite was run directly and passed 15/15 before delivery.
 - Antigravity (`agy`): `PASS` for the final operator-reconciliation implementation, live-application evidence, and requirement coverage. It reported no findings, missing tests, or residual risks.
 
+## 거버넌스 승인
+
+- 후보 커밋: `5cef762c5d8ae2aeff37626d5caa84fec048e800`
+- 봉인 제출: `phase17-submission-round-1`
+- 봉인 매니페스트: `docs/phase17/submission-round1.sealed.json`
+- 아티팩트 번들 해시: `sha256:66ffa14f471f10f7c2efedde29bcbc6b6c49ad5f701e597aedb7b35c639ff44a`
+- 계획 검증: `phase17-round1-planning-verdict` — Antigravity 증적, `APPROVED`
+- 개발 검증: `phase17-round1-development-verdict` — 사용자 지시에 따라 Fable 대신 Claude Opus 4.8 증적, `APPROVED`
+- 열린 지적/기술부채: 0건
+- 최종 Gate: `ACCEPTED` (`2026-07-22T05:08:47.451Z`, row version 7)
+
+Gate 승인과 봇 프로세스 실행은 분리되어 있다. 승인 직후에도 여섯 봇은 의도적으로 `OFFLINE`이며, 실제 운영 시작은 운영자가 역할 프로필과 실행 모드를 확인한 뒤 별도로 수행한다.
+
 ## Live shadow smoke
 
 - PostgreSQL role and env bootstrap: PASS — six distinct principals and protected shadow profiles.
@@ -51,4 +64,4 @@ Enrollment verification covers the `node bot.js` six-role bulk wizard plus direc
 - Role-job retry restores claimable workflow/node/task state only when task control remains `RUNNING` and no sibling reconciliation is unresolved. Outbox retry resets nonterminal publication state so the existing author-bound correlation-marker path runs before any send. Explicit dead-letter is treated as resolved only when its audit action matches the current reconciliation revision.
 - Live application: PASS — all six instances were `OFFLINE`; migrations `018`/`019` remained checksum-matched no-ops and `020` applied once. `reconcile-list` returned zero unresolved items. Active/pending/unhealthy role-job and outbox counts were all zero; readiness blockers were limited to the six intentionally stopped instances.
 
-The previous generalized operator-recovery Gate blocker is implemented, covered in the disposable DB suite, and independently approved by Claude Opus 4.8 and Antigravity. The final Phase 17 governance submission and Gate decision remain separate steps.
+The previous generalized operator-recovery Gate blocker is implemented, covered in the disposable DB suite, independently approved by Claude Opus 4.8 and Antigravity, and accepted by the Phase 17 governance Gate.
