@@ -13,6 +13,7 @@ if (!enabled) {
   dotenv.config({ path: path.resolve(__dirname, "../../.env"), override: false, quiet: true });
   const { migrateDown, migrateUp } = require("../../src/db/migrationRunner");
   const publicationService = require("../../src/controlPlane/publicationService");
+  const reconciliationService = require("../../src/controlPlane/reconciliationService");
 
   const baseUrl = process.env.PHASE17_TEST_DATABASE_URL || process.env.DATABASE_URL;
   if (!baseUrl) throw new Error("PHASE17_TEST_DATABASE_URL or DATABASE_URL is required");
@@ -84,6 +85,7 @@ if (!enabled) {
     await migrateUp("017_workspace_safety_rework", { pool });
     await migrateUp("018_durable_control_plane", { pool });
     await migrateUp("019_phase17_credential_enrollment", { pool });
+    await migrateUp("020_phase17_operator_reconciliation", { pool });
     phase17Applied = true;
     for (const role of ["manager", "planner", "coder", "reviewer", "qa", "summarizer"]) {
       await register(role, `${role === "manager" ? "manager" : role}-01`);
@@ -93,6 +95,7 @@ if (!enabled) {
   after(async () => {
     if (pool) {
       if (phase17Applied) {
+        await migrateDown("020_phase17_operator_reconciliation", { pool, allowDestructive: true }).catch(() => {});
         await migrateDown("019_phase17_credential_enrollment", { pool, allowDestructive: true }).catch(() => {});
         await migrateDown("018_durable_control_plane", { pool, allowDestructive: true }).catch(() => {});
       }
@@ -115,7 +118,8 @@ if (!enabled) {
     assert.deepEqual(routines.rows, []);
     const tables = await pool.query(
       `SELECT table_name FROM information_schema.table_privileges
-       WHERE table_schema='public' AND grantee='PUBLIC' AND table_name IN ('role_jobs','workflow_runs','outbox_events')`
+       WHERE table_schema='public' AND grantee='PUBLIC'
+         AND table_name IN ('role_jobs','workflow_runs','outbox_events','phase17_reconciliation_actions')`
     );
     assert.deepEqual(tables.rows, []);
     const enrollmentRoutines = await pool.query(
@@ -124,6 +128,12 @@ if (!enabled) {
          AND routine_name IN ('store_phase17_channel_credential','revoke_phase17_channel_credential')`
     );
     assert.deepEqual(enrollmentRoutines.rows, []);
+    const reconciliationRoutines = await pool.query(
+      `SELECT routine_name FROM information_schema.routine_privileges
+       WHERE routine_schema='public' AND grantee='PUBLIC'
+         AND routine_name IN ('reconcile_phase17_item','phase17_bump_reconciliation_revision')`
+    );
+    assert.deepEqual(reconciliationRoutines.rows, []);
   });
 
   test("runtime credential enrollment is instance-bound and can reactivate then revoke its own row", async () => {
@@ -314,6 +324,318 @@ if (!enabled) {
     assert.equal(failed.rows[0].status, "NEEDS_RECONCILIATION");
   });
 
+  test("operator role-job reconciliation is idempotent, revision-fenced, audited, and workflow-consistent", async () => {
+    await receive("operator-role-job", "operator-role-job", "phase17-coder-v1");
+    const coder = await claim("coder", "coder-01");
+    await bind("coder");
+    const uncertain = (await pool.query(
+      "SELECT * FROM fail_role_job($1,'coder-01',$2,'SIDE_EFFECT_UNKNOWN','operator test','fingerprint',TRUE,1000)",
+      [coder.id, coder.claim_token]
+    )).rows[0];
+    assert.equal(uncertain.status, "NEEDS_RECONCILIATION");
+    assert.equal(String(uncertain.reconciliation_revision), "1");
+
+    const params = [
+      "operator-role-job-retry-001", "ROLE_JOB", coder.id, "RETRY", "1",
+      "외부 부작용이 없음을 작업 로그로 확인했습니다.", "incident:phase17-role-job-001",
+    ];
+    const repeated = await Promise.all(Array.from({ length: 12 }, () => pool.query(
+      "SELECT * FROM reconcile_phase17_item($1,$2,$3,$4,$5::bigint,$6,$7)", params
+    )));
+    assert.equal(repeated.length, 12);
+    assert.equal(new Set(repeated.map(({ rows }) => String(rows[0].id))).size, 1);
+    assert.equal((await pool.query(
+      "SELECT COUNT(*)::int AS count FROM phase17_reconciliation_actions WHERE request_id=$1", [params[0]]
+    )).rows[0].count, 1);
+    await assert.rejects(
+      pool.query(
+        "SELECT * FROM reconcile_phase17_item('operator-role-job-stale-002','ROLE_JOB',$1,'DEAD_LETTER',1,$2,$3)",
+        [coder.id, "동일 revision의 중복 결정을 거부해야 합니다.", "incident:phase17-role-job-stale"]
+      ),
+      /compare-and-set failed/
+    );
+
+    const retryState = (await pool.query(
+      `SELECT job.status AS job_status, job.max_attempts, job.attempt_count,
+              node.status AS node_status, run.status AS run_status, task.lifecycle_status
+       FROM role_jobs job
+       JOIN workflow_nodes node ON node.id=job.workflow_node_id
+       JOIN workflow_runs run ON run.id=job.workflow_run_id
+       JOIN tasks task ON task.id=job.task_id
+       WHERE job.id=$1`,
+      [coder.id]
+    )).rows[0];
+    assert.equal(retryState.job_status, "RETRY_WAIT");
+    assert.equal(retryState.node_status, "READY");
+    assert.equal(retryState.run_status, "RUNNING");
+    assert.equal(retryState.lifecycle_status, "RUNNING");
+    assert.ok(retryState.max_attempts > retryState.attempt_count);
+
+    const reclaimed = await claim("coder", "coder-01");
+    assert.equal(reclaimed.id, coder.id);
+    await bind("coder");
+    const uncertainAgain = (await pool.query(
+      "SELECT * FROM fail_role_job($1,'coder-01',$2,'SIDE_EFFECT_STILL_UNKNOWN','operator test','fingerprint-2',TRUE,1000)",
+      [reclaimed.id, reclaimed.claim_token]
+    )).rows[0];
+    assert.equal(String(uncertainAgain.reconciliation_revision), "2");
+    const dead = (await pool.query(
+      `SELECT * FROM reconcile_phase17_item(
+         'operator-role-job-dead-003','ROLE_JOB',$1,'DEAD_LETTER',2,$2,$3
+       )`,
+      [coder.id, "재실행 대신 명시적 실패 종결을 승인했습니다.", "incident:phase17-role-job-dead"]
+    )).rows[0];
+    assert.equal(dead.after_status, "DEAD_LETTER");
+    assert.equal(String(dead.after_revision), "3");
+    const terminal = (await pool.query(
+      `SELECT job.status AS job_status, node.status AS node_status,
+              run.status AS run_status, task.lifecycle_status
+       FROM role_jobs job
+       JOIN workflow_nodes node ON node.id=job.workflow_node_id
+       JOIN workflow_runs run ON run.id=job.workflow_run_id
+       JOIN tasks task ON task.id=job.task_id
+       WHERE job.id=$1`,
+      [coder.id]
+    )).rows[0];
+    assert.deepEqual(terminal, {
+      job_status: "DEAD_LETTER", node_status: "FAILED", run_status: "FAILED", lifecycle_status: "FAILED",
+    });
+    assert.equal((await pool.query(
+      "SELECT COUNT(*)::int AS count FROM job_events WHERE role_job_id=$1 AND event_type LIKE 'OPERATOR_%'", [coder.id]
+    )).rows[0].count, 2);
+    await assert.rejects(
+      pool.query("UPDATE phase17_reconciliation_actions SET reason='변조된 운영자 사유입니다.' WHERE request_id=$1", [params[0]]),
+      /append-only/
+    );
+  });
+
+  test("operator role-job retry guards fail closed and sibling dead-lettering preserves workflow consistency", async () => {
+    await receive("operator-guard-artifact", "operator-guard-artifact", "phase17-coder-v1");
+    const artifactJob = await claim("coder", "coder-01");
+    await bind("coder");
+    const artifactUncertain = (await pool.query(
+      "SELECT * FROM fail_role_job($1,'coder-01',$2,'ARTIFACT_UNKNOWN','guard test','guard-artifact',TRUE,1000)",
+      [artifactJob.id, artifactJob.claim_token]
+    )).rows[0];
+    await pool.query(
+      `INSERT INTO artifacts(id,task_id,artifact_type,artifact_hash,manifest_json,created_by)
+       VALUES ('artifact-operator-guard',$1,'TEST',$2,'{}'::jsonb,'phase17-test')`,
+      [artifactUncertain.task_id, `sha256:${"a".repeat(64)}`]
+    );
+    await pool.query(
+      "UPDATE role_jobs SET output_artifact_id='artifact-operator-guard' WHERE id=$1",
+      [artifactJob.id]
+    );
+    await assert.rejects(
+      pool.query(
+        `SELECT * FROM reconcile_phase17_item(
+           'operator-guard-artifact-retry','ROLE_JOB',$1,'RETRY',1,$2,$3
+         )`,
+        [artifactJob.id, "출력 산출물이 있는 작업은 재시도를 거부합니다.", "incident:phase17-guard-artifact"]
+      ),
+      /output artifact cannot be retried/
+    );
+    await pool.query(
+      `SELECT * FROM reconcile_phase17_item(
+         'operator-guard-artifact-dead','ROLE_JOB',$1,'DEAD_LETTER',1,$2,$3
+       )`,
+      [artifactJob.id, "출력 산출물 존재로 재실행 대신 실패 종결합니다.", "incident:phase17-guard-artifact-dead"]
+    );
+
+    await receive("operator-guard-control", "operator-guard-control", "phase17-coder-v1");
+    const controlJob = await claim("coder", "coder-01");
+    await bind("coder");
+    const controlUncertain = (await pool.query(
+      "SELECT * FROM fail_role_job($1,'coder-01',$2,'CONTROL_UNKNOWN','guard test','guard-control',TRUE,1000)",
+      [controlJob.id, controlJob.claim_token]
+    )).rows[0];
+    await pool.query("UPDATE tasks SET control_state='PAUSED' WHERE id=$1", [controlUncertain.task_id]);
+    await assert.rejects(
+      pool.query(
+        `SELECT * FROM reconcile_phase17_item(
+           'operator-guard-control-retry','ROLE_JOB',$1,'RETRY',1,$2,$3
+         )`,
+        [controlJob.id, "중지된 task control 상태에서는 재시도를 거부합니다.", "incident:phase17-guard-control"]
+      ),
+      /control state must be RUNNING/
+    );
+    await pool.query("UPDATE tasks SET control_state='RUNNING' WHERE id=$1", [controlUncertain.task_id]);
+    await pool.query(
+      `SELECT * FROM reconcile_phase17_item(
+         'operator-guard-control-dead','ROLE_JOB',$1,'DEAD_LETTER',1,$2,$3
+       )`,
+      [controlJob.id, "control guard 확인 후 작업을 실패로 종결합니다.", "incident:phase17-guard-control-dead"]
+    );
+
+    await receive("operator-guard-sibling", "operator-guard-sibling", "phase17-coder-v1");
+    const primaryJob = await claim("coder", "coder-01");
+    await bind("coder");
+    const primaryUncertain = (await pool.query(
+      "SELECT * FROM fail_role_job($1,'coder-01',$2,'SIBLING_UNKNOWN','guard test','guard-sibling',TRUE,1000)",
+      [primaryJob.id, primaryJob.claim_token]
+    )).rows[0];
+    await pool.query(
+      `INSERT INTO workflow_nodes(
+         id,workflow_run_id,task_id,node_key,target_role,job_type,status
+       ) VALUES (
+         'node-operator-guard-sibling-secondary',$1,$2,'operator-guard-sibling-secondary','coder','TASK_CODE','NEEDS_RECONCILIATION'
+       )`,
+      [primaryUncertain.workflow_run_id, primaryUncertain.task_id]
+    );
+    await pool.query(
+      `INSERT INTO role_jobs(
+         id,workflow_run_id,workflow_node_id,task_id,target_role,job_type,status,
+         idempotency_key,correlation_id,safe_to_retry
+       ) VALUES (
+         'job-operator-guard-sibling-secondary',$1,'node-operator-guard-sibling-secondary',$2,'coder','TASK_CODE',
+         'NEEDS_RECONCILIATION','job-operator-guard-sibling-secondary','corr-operator-guard-sibling',FALSE
+       )`,
+      [primaryUncertain.workflow_run_id, primaryUncertain.task_id]
+    );
+    await assert.rejects(
+      pool.query(
+        `SELECT * FROM reconcile_phase17_item(
+           'operator-guard-sibling-retry','ROLE_JOB',$1,'RETRY',1,$2,$3
+         )`,
+        [primaryJob.id, "미해결 sibling 작업이 있으면 재시도를 거부합니다.", "incident:phase17-guard-sibling"]
+      ),
+      /another unresolved workflow job/
+    );
+    await pool.query(
+      `SELECT * FROM reconcile_phase17_item(
+         'operator-guard-primary-dead','ROLE_JOB',$1,'DEAD_LETTER',1,$2,$3
+       )`,
+      [primaryJob.id, "primary 작업을 먼저 실패로 종결하고 sibling을 보존합니다.", "incident:phase17-guard-primary-dead"]
+    );
+    const waiting = (await pool.query(
+      `SELECT run.status AS run_status, task.lifecycle_status
+       FROM workflow_runs run JOIN tasks task ON task.id=run.task_id
+       WHERE run.id=$1`,
+      [primaryUncertain.workflow_run_id]
+    )).rows[0];
+    assert.equal(waiting.run_status, "NEEDS_RECONCILIATION");
+    assert.notEqual(waiting.lifecycle_status, "FAILED");
+    await pool.query(
+      `SELECT * FROM reconcile_phase17_item(
+         'operator-guard-sibling-dead','ROLE_JOB','job-operator-guard-sibling-secondary','DEAD_LETTER',0,$1,$2
+       )`,
+      ["마지막 sibling 작업도 명시적으로 실패 종결합니다.", "incident:phase17-guard-sibling-dead"]
+    );
+    const terminal = (await pool.query(
+      `SELECT run.status AS run_status, task.lifecycle_status
+       FROM workflow_runs run JOIN tasks task ON task.id=run.task_id
+       WHERE run.id=$1`,
+      [primaryUncertain.workflow_run_id]
+    )).rows[0];
+    assert.deepEqual(terminal, { run_status: "FAILED", lifecycle_status: "FAILED" });
+  });
+
+  test("operator outbox reconciliation resets publication safely and acknowledges a dead letter", async () => {
+    await pool.query(
+      `INSERT INTO outbox_events(
+         id,aggregate_type,aggregate_id,event_type,payload_json,target_role,idempotency_key,correlation_id
+       ) VALUES (
+         'outbox-operator-recovery','test','operator-recovery','OPERATIONAL_RESPONSE',
+         '{"channelId":"channel","result":{"text":"operator"}}','manager',
+         'outbox-operator-recovery','corr-operator-recovery'
+       )`
+    );
+    await pool.query(
+      "UPDATE outbox_events SET status='NEEDS_RECONCILIATION', last_error_code='ACK_UNKNOWN' WHERE id='outbox-operator-recovery'"
+    );
+    await pool.query(
+      `INSERT INTO discord_publications(
+         id,outbox_event_id,publication_key,target_role,channel_id,correlation_marker,status
+       ) VALUES (
+         'publication-operator-recovery','outbox-operator-recovery','publication-operator-recovery',
+         'manager','channel','marker-operator-recovery','NEEDS_RECONCILIATION'
+       )`
+    );
+    const retried = (await pool.query(
+      `SELECT * FROM reconcile_phase17_item(
+         'operator-outbox-retry-001','OUTBOX_EVENT','outbox-operator-recovery','RETRY',1,$1,$2
+       )`,
+      ["Discord marker 재조회 후 안전하게 재처리합니다.", "incident:phase17-outbox-retry"]
+    )).rows[0];
+    assert.equal(retried.after_status, "RETRY_WAIT");
+    const retryState = (await pool.query(
+      `SELECT event.status, event.claim_token, event.claimed_by_instance_id,
+              event.max_attempts, event.attempt_count, publication.status AS publication_status
+       FROM outbox_events event
+       JOIN discord_publications publication ON publication.outbox_event_id=event.id
+       WHERE event.id='outbox-operator-recovery'`
+    )).rows[0];
+    assert.equal(retryState.status, "RETRY_WAIT");
+    assert.equal(retryState.publication_status, "PENDING");
+    assert.equal(retryState.claim_token, null);
+    assert.equal(retryState.claimed_by_instance_id, null);
+    assert.ok(retryState.max_attempts > retryState.attempt_count);
+
+    await pool.query(
+      "UPDATE outbox_events SET status='NEEDS_RECONCILIATION' WHERE id='outbox-operator-recovery'"
+    );
+    await pool.query(
+      "UPDATE discord_publications SET status='NEEDS_RECONCILIATION' WHERE outbox_event_id='outbox-operator-recovery'"
+    );
+    const dead = (await pool.query(
+      `SELECT * FROM reconcile_phase17_item(
+         'operator-outbox-dead-002','OUTBOX_EVENT','outbox-operator-recovery','DEAD_LETTER',2,$1,$2
+       )`,
+      ["운영자가 재발신하지 않고 폐기하기로 승인했습니다.", "incident:phase17-outbox-dead"]
+    )).rows[0];
+    assert.equal(dead.after_status, "DEAD_LETTER");
+    assert.equal(String(dead.after_revision), "3");
+    assert.deepEqual((await pool.query(
+      `SELECT event.status, publication.status AS publication_status
+       FROM outbox_events event JOIN discord_publications publication ON publication.outbox_event_id=event.id
+       WHERE event.id='outbox-operator-recovery'`
+    )).rows[0], { status: "DEAD_LETTER", publication_status: "DEAD_LETTER" });
+    const unresolved = await pool.query(
+      `SELECT 1 FROM outbox_events event
+       WHERE event.id='outbox-operator-recovery'
+         AND NOT EXISTS (
+           SELECT 1 FROM phase17_reconciliation_actions action
+           WHERE action.item_type='OUTBOX_EVENT' AND action.item_id=event.id
+             AND action.after_status=event.status
+             AND action.after_revision=event.reconciliation_revision
+         )`
+    );
+    assert.deepEqual(unresolved.rows, []);
+  });
+
+  test("concurrent operator requests have one revision-fenced winner", async () => {
+    await pool.query(
+      `INSERT INTO outbox_events(
+         id,aggregate_type,aggregate_id,event_type,payload_json,target_role,idempotency_key,correlation_id,status
+       ) VALUES (
+         'outbox-operator-race','test','operator-race','ROLE_JOB_AVAILABLE','{}','planner',
+         'outbox-operator-race','corr-operator-race','NEEDS_RECONCILIATION'
+       )`
+    );
+    const attempts = await Promise.allSettled(Array.from({ length: 20 }, (_, index) => pool.query(
+      `SELECT * FROM reconcile_phase17_item(
+         $1,'OUTBOX_EVENT','outbox-operator-race','RETRY',0,$2,$3
+       )`,
+      [`operator-outbox-race-${String(index).padStart(3, "0")}`, "동시 운영자 결정에서 단 하나만 반영합니다.", `incident:phase17-outbox-race-${index}`]
+    )));
+    assert.equal(attempts.filter(({ status }) => status === "fulfilled").length, 1);
+    assert.equal(attempts.filter(({ status }) => status === "rejected").length, 19);
+    assert.equal((await pool.query(
+      "SELECT COUNT(*)::int AS count FROM phase17_reconciliation_actions WHERE item_id='outbox-operator-race'"
+    )).rows[0].count, 1);
+  });
+
+  test("operator reconciliation inventory query returns only unresolved secret-safe projections", async () => {
+    const rows = await reconciliationService.list({ db: pool });
+    assert.ok(rows.some(({ item_id: itemId }) => itemId === "outbox-race-one"));
+    assert.equal(rows.some(({ item_id: itemId }) => itemId === "outbox-operator-recovery"), false);
+    for (const row of rows) {
+      for (const forbidden of ["payload_json", "last_error_detail_redacted", "correlation_id", "channel_id", "discord_message_id"]) {
+        assert.equal(Object.hasOwn(row, forbidden), false);
+      }
+    }
+  });
+
   test("shadow publication writes a SHADOWED projection and never calls Discord", async () => {
     const accepted = await receive("publication-shadow", "publication-shadow", "phase17-planner-v1");
     await pool.query("UPDATE outbox_events SET available_at = CURRENT_TIMESTAMP + INTERVAL '1 hour' WHERE target_role='manager'");
@@ -333,6 +655,7 @@ if (!enabled) {
 
   test("down/up rollback preserves legacy tasks and reapplies cleanly", async () => {
     await pool.query("INSERT INTO tasks(id,title,original_request,status) VALUES ('legacy-phase17','legacy','legacy','DONE')");
+    await migrateDown("020_phase17_operator_reconciliation", { pool, allowDestructive: true });
     await migrateDown("019_phase17_credential_enrollment", { pool, allowDestructive: true });
     await migrateDown("018_durable_control_plane", { pool, allowDestructive: true });
     phase17Applied = false;
@@ -340,6 +663,7 @@ if (!enabled) {
     assert.equal((await pool.query("SELECT to_regclass('public.role_jobs') AS relation")).rows[0].relation, null);
     await migrateUp("018_durable_control_plane", { pool });
     await migrateUp("019_phase17_credential_enrollment", { pool });
+    await migrateUp("020_phase17_operator_reconciliation", { pool });
     phase17Applied = true;
     assert.equal((await pool.query("SELECT status FROM tasks WHERE id='legacy-phase17'")).rows[0].status, "DONE");
   });

@@ -12,6 +12,8 @@ const {
   bootstrapRoles,
   importCandidateCredentials,
   readiness,
+  reconcile,
+  reconciliationInventory,
   revokeCandidateCredentials,
   roleFunctions,
   rollback,
@@ -449,7 +451,7 @@ test("readiness reports missing principals, credentials, and instances without s
   const database = {
     async query(sql) {
       if (sql.includes("FROM delivery_phases")) return { rows: [{ id: "phase-16", status: "ACCEPTED" }, { id: "phase-17", status: "IN_PROGRESS" }] };
-      if (sql.includes("FROM schema_migrations")) return { rows: [{ id: "018_durable_control_plane" }, { id: "019_phase17_credential_enrollment" }] };
+      if (sql.includes("FROM schema_migrations")) return { rows: [{ id: "018_durable_control_plane" }, { id: "019_phase17_credential_enrollment" }, { id: "020_phase17_operator_reconciliation" }] };
       if (sql.includes("FROM bot_role_principals")) return { rows: [] };
       if (sql.includes("FROM channel_credentials")) return { rows: [{ active_credentials: 0, distinct_fingerprints: 0, missing_fingerprints: 0 }] };
       if (sql.includes("FROM workflow_definitions")) return { rows: [{ count: 6 }] };
@@ -463,6 +465,51 @@ test("readiness reports missing principals, credentials, and instances without s
   assert.ok(result.blockers.includes("no enabled DB principal for manager"));
   assert.ok(result.blockers.includes("fewer than six ACTIVE Discord credentials"));
   assert.doesNotMatch(JSON.stringify(result), /DATABASE_URL|encrypted_token|auth_tag/);
+});
+
+test("operator reconciliation inventory excludes payload and error detail", async () => {
+  let statement = "";
+  const rows = [{
+    item_type: "OUTBOX_EVENT", item_id: "outbox-1", status: "NEEDS_RECONCILIATION",
+    reconciliation_revision: "2", target_role: "manager", item_kind: "OPERATIONAL_RESPONSE",
+    last_error_code: "ACK_UNKNOWN",
+  }];
+  const result = await reconciliationInventory({
+    database: { async query(sql) { statement = sql; return { rows }; } },
+  });
+  assert.deepEqual(result, rows);
+  assert.doesNotMatch(statement, /payload_json|last_error_detail_redacted|correlation_id|channel_id/);
+});
+
+test("operator reconciliation requires explicit confirmation and complete fenced evidence", async () => {
+  const baseArgs = [
+    "--request-id", "operator-request-001",
+    "--item-type", "outbox-event",
+    "--item-id", "outbox-1",
+    "--decision", "retry",
+    "--expected-revision", "2",
+    "--reason", "Discord marker가 없음을 확인했습니다.",
+    "--evidence-ref", "incident:phase17-001",
+  ];
+  await assert.rejects(reconcile(baseArgs, { database: { async query() { throw new Error("must not query"); } } }), /confirm-reconciliation/);
+  let call;
+  const result = await reconcile([...baseArgs, "--confirm-reconciliation"], {
+    database: {
+      async query(sql, params) {
+        call = { sql, params };
+        return { rows: [{ request_id: params[0], item_type: params[1], decision: params[3] }] };
+      },
+    },
+  });
+  assert.deepEqual(result, { request_id: "operator-request-001", item_type: "OUTBOX_EVENT", decision: "RETRY" });
+  assert.match(call.sql, /reconcile_phase17_item/);
+  assert.deepEqual(call.params.slice(0, 5), ["operator-request-001", "OUTBOX_EVENT", "outbox-1", "RETRY", "2"]);
+  await assert.rejects(
+    reconcile([...baseArgs.filter((value) => value !== "incident:phase17-001"), "unsafe evidence with spaces", "--confirm-reconciliation"], {
+      database: { async query() { throw new Error("must not query"); } },
+    }),
+    /evidence ref/
+  );
 });
 
 test("rollback fails closed for live workflows and undelivered outbox events", async () => {
@@ -496,6 +543,6 @@ test("rollback fails closed for live workflows and undelivered outbox events", a
     migrate: async (id, options) => ({ id, options }),
   });
   assert.equal(queryIndex, 2);
-  assert.deepEqual(result.map(({ id }) => id), ["019_phase17_credential_enrollment", "018_durable_control_plane"]);
+  assert.deepEqual(result.map(({ id }) => id), ["020_phase17_operator_reconciliation", "019_phase17_credential_enrollment", "018_durable_control_plane"]);
   assert.equal(result.every(({ options }) => options.allowDestructive), true);
 });

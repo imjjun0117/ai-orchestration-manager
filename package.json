@@ -7,6 +7,8 @@
     "start": "node bot.js",
     "multibot": "node scripts/run-multibot.js",
     "multibot:phase17": "node scripts/run-phase17-multibot.js",
+    "smoke:phase17:authors": "node scripts/phase17-discord-author-smoke.js",
+    "smoke:phase17:resilience": "node scripts/phase17-discord-resilience-smoke.js",
     "stress:locks": "node scripts/stress-workspace-locks.js",
     "verify": "node scripts/verify-readiness.js",
     "verify:db": "node scripts/verify-readiness.js --with-db",

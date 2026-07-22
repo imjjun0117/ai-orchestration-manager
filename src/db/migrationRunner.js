@@ -40,6 +40,10 @@ const MIGRATIONS = Object.freeze({
     up: path.join(__dirname, "migrations", "019_phase17_credential_enrollment.up.sql"),
     down: path.join(__dirname, "migrations", "019_phase17_credential_enrollment.down.sql"),
   },
+  "020_phase17_operator_reconciliation": {
+    up: path.join(__dirname, "migrations", "020_phase17_operator_reconciliation.up.sql"),
+    down: path.join(__dirname, "migrations", "020_phase17_operator_reconciliation.down.sql"),
+  },
 });
 
 function migrationSource(id, direction) {

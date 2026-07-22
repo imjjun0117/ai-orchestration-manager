@@ -72,11 +72,60 @@ npm run multibot:phase17 -- \
 
 로컬 운영에서는 이 값이 없으면 runner가 `PHASE17_CONTROL_ENV_FILE` 또는 기본 `.env`의 `DATABASE_URL`만 읽어 사용합니다. 해당 파일의 다른 값과 평문 token은 child process에 병합하지 않습니다.
 
+## 역할별 Discord 발신 ID 검증
+
+Phase 17 Gate 승인 전에는 `shadow` 모드를 유지한 채 아래 명령으로 여섯 역할 계정의 실제 발신 ID를 두 차례씩 검증합니다. 스크립트는 각 계정이 같은 테스트 채널에 bot-authored `!task` 마커를 보내게 하고, Discord에서 다시 조회한 author ID와 DB의 `bot_instances` 역할 바인딩이 일치하는지 확인합니다. Manager ingress가 12개 메시지를 모두 거부하고 `discord_event_receipts`를 만들지 않은 것도 함께 검사합니다.
+
+```sh
+npm run smoke:phase17:authors -- --confirm-live-discord
+# AI_WAR_ROOM_CHANNEL_ID가 비어 있고 기존 숫자형 task 채널이 정확히 하나인 경우
+npm run smoke:phase17:authors -- --confirm-live-discord --use-latest-task-channel
+```
+
+root `.env`에서는 `AI_WAR_ROOM_CHANNEL_ID`와 후검증용 운영자 `DATABASE_URL`만 선택해 사용하며 legacy `DISCORD_TOKEN`은 process env나 자식 프로세스에 로드하지 않습니다. 이 값이 비어 있으면 `--use-latest-task-channel`을 명시할 수 있지만, DB에 저장된 숫자형 Discord task 채널 후보가 정확히 하나가 아니면 실행을 거부합니다. 역할 token은 각 역할 DB principal로 `channel_credentials`에서 복호화하며 출력하지 않습니다. Manager principal의 최소권한은 유지하고, `discord_event_receipts`가 0건인지 확인하는 읽기 전용 쿼리만 운영자 연결로 수행합니다. 기본 실행은 자신이 만든 테스트 메시지의 정확한 ID만 검증 후 삭제하고, 하나라도 정리하지 못하면 실패합니다. Gate 전용 smoke이므로 역할 프로필이 `enforced`이면 실행을 거부합니다.
+
+## 강제 종료·재접속·rate-limit 검증
+
+아래 smoke는 제어 평면이 idle이고 여섯 인스턴스가 모두 `OFFLINE`일 때만 실행됩니다. 각 역할의 실제 entrypoint를 기동하고 등록 PID를 확인한 뒤, 자신이 만든 정확한 자식 프로세스만 `SIGKILL`합니다. 같은 역할 프로필을 다시 기동해 새 PID와 기존 Discord ID로 `ONLINE` 복구되는지 확인하고 `SIGTERM`으로 정상 종료해 다시 `OFFLINE`인지 검사합니다.
+
+```sh
+npm run smoke:phase17:resilience -- --confirm-live-discord
+# AI_WAR_ROOM_CHANNEL_ID가 비어 있고 기존 숫자형 task 채널이 정확히 하나인 경우
+npm run smoke:phase17:resilience -- --confirm-live-discord --use-latest-task-channel
+```
+
+프로세스 재기동 후에는 여섯 Discord client가 모두 초기 Ready인지 먼저 확인하고, 현재 `discord.js`/`@discordjs/ws`의 shard Resume 경로로 통제된 연결 단절을 발생시켜 `shardReconnecting`과 `shardResume`을 검증합니다. REST rate-limit 검증은 메시지를 생성하지 않고 최근 메시지 1건 조회 endpoint만 사용합니다. Discord가 제공한 5-request/1-second bucket에서 대기 이벤트를 확인한 뒤 추가 조회가 성공해야 통과합니다. 기본 최대 요청 수는 역할당 12회이며 토큰, channel ID, Discord user ID, URL은 출력하지 않습니다.
+
 ## 장애 복구와 롤백
 
 Manager가 watchdog을 실행하며 `npm run phase17 -- recover`로 수동 복구할 수 있습니다. lease 만료는 safe job만 retry하고 Coder/QA처럼 side effect가 가능한 job은 `NEEDS_RECONCILIATION`으로 보냅니다. Discord ack 전 장애는 correlation marker를 기준으로 reconciliation합니다.
 
-`npm run phase17 -- readiness`는 token 원문이나 connection string을 출력하지 않고 Phase Gate, role principal, fingerprinted credential, workflow definition, live instance, queue/outbox 상태를 점검합니다.
+자동 복구가 안전하지 않은 항목은 운영자 연결로 먼저 비밀값 없는 목록을 확인합니다.
+
+```sh
+npm run phase17 -- reconcile-list
+```
+
+목록의 `item_type`, `item_id`, `reconciliation_revision`을 사건 기록과 대조한 뒤 아래 두 결정 중 하나만 적용할 수 있습니다.
+
+- `RETRY`: 이전 외부 부작용이 없었음을 확인한 role job, 또는 Discord correlation marker를 다시 검사할 outbox에 사용합니다. claim/lease를 지우고 재시도 예산을 정확히 한 번 확보합니다.
+- `DEAD_LETTER`: 재실행하지 않고 명시적으로 실패 종결할 때 사용합니다. role job이면 node/run/task도 실패 상태로 맞춥니다.
+
+```sh
+npm run phase17 -- reconcile \
+  --request-id operator-20260722-001 \
+  --item-type OUTBOX_EVENT \
+  --item-id outbox-example \
+  --decision RETRY \
+  --expected-revision 1 \
+  --reason 'Discord marker 검색 결과 기존 발신이 없음을 확인했습니다.' \
+  --evidence-ref incident:phase17-20260722-001 \
+  --confirm-reconciliation
+```
+
+`request-id`는 같은 입력의 재실행만 멱등으로 허용하며 다른 입력에 재사용할 수 없습니다. revision이 바뀌면 compare-and-set으로 거부되므로 `reconcile-list`부터 다시 확인해야 합니다. 사유는 16자 이상, 근거 참조는 공백 없는 incident/ticket/artifact 식별자여야 합니다. 감사 행은 `phase17_reconciliation_actions`에 append-only로 남고 bot 역할 DB principal에는 이 함수가 부여되지 않습니다. token, payload, error detail은 목록이나 감사 snapshot에 포함하지 않습니다.
+
+`npm run phase17 -- readiness`는 token 원문이나 connection string을 출력하지 않고 Phase Gate, role principal, fingerprinted credential, workflow definition, live instance, queue/outbox 상태를 점검합니다. 감사 기록 없이 남은 `NEEDS_RECONCILIATION`/`DEAD_LETTER`만 blocker로 계산합니다.
 
 기존 ACTIVE 자격증명에 fingerprint 메타데이터만 없는 경우 `npm run phase17 -- credential-inventory`로 비밀값 없는 상태를 확인한 뒤 `npm run phase17 -- fingerprint-credentials --confirm-fingerprint-backfill`을 실행합니다. 이 명령은 암호화된 token을 변경하거나 출력하지 않고 누락된 fingerprint만 채웁니다.
 

@@ -18,10 +18,12 @@ const {
 } = require("../src/channels/channelCredentialService");
 const { loadRoleConfig, ROLES, validateSixRoleSet } = require("../src/controlPlane/roleConfig");
 const watchdog = require("../src/controlPlane/watchdogService");
+const reconciliation = require("../src/controlPlane/reconciliationService");
 
 const PHASE17_MIGRATIONS = Object.freeze([
   "018_durable_control_plane",
   "019_phase17_credential_enrollment",
+  "020_phase17_operator_reconciliation",
 ]);
 
 const ROLE_PROFILES = Object.freeze(ROLES.map((role) => Object.freeze({
@@ -454,9 +456,23 @@ async function readiness({ database = db } = {}) {
     database.query(
       `SELECT
          COUNT(*) FILTER (WHERE status IN ('QUEUED','RETRY_WAIT','RUNNING'))::int AS active_jobs,
-         COUNT(*) FILTER (WHERE status IN ('NEEDS_RECONCILIATION','DEAD_LETTER'))::int AS unhealthy_jobs,
+         (SELECT COUNT(*)::int FROM role_jobs job
+          WHERE job.status IN ('NEEDS_RECONCILIATION','DEAD_LETTER')
+            AND NOT EXISTS (
+              SELECT 1 FROM phase17_reconciliation_actions action
+              WHERE action.item_type='ROLE_JOB' AND action.item_id=job.id
+                AND action.after_status=job.status
+                AND action.after_revision=job.reconciliation_revision
+            )) AS unhealthy_jobs,
          (SELECT COUNT(*)::int FROM outbox_events WHERE status IN ('PENDING','DISPATCHING','RETRY_WAIT')) AS pending_outbox,
-         (SELECT COUNT(*)::int FROM outbox_events WHERE status IN ('NEEDS_RECONCILIATION','DEAD_LETTER')) AS unhealthy_outbox
+         (SELECT COUNT(*)::int FROM outbox_events event
+          WHERE event.status IN ('NEEDS_RECONCILIATION','DEAD_LETTER')
+            AND NOT EXISTS (
+              SELECT 1 FROM phase17_reconciliation_actions action
+              WHERE action.item_type='OUTBOX_EVENT' AND action.item_id=event.id
+                AND action.after_status=event.status
+                AND action.after_revision=event.reconciliation_revision
+            )) AS unhealthy_outbox
        FROM role_jobs`
     ),
   ]);
@@ -488,6 +504,33 @@ async function readiness({ database = db } = {}) {
     liveInstances: instances.rows,
     queues: queue,
   };
+}
+
+function flagValue(args, flag) {
+  const index = args.indexOf(flag);
+  if (index < 0 || index === args.length - 1 || String(args[index + 1]).startsWith("--")) {
+    throw new Error(`reconcile requires ${flag} <value>`);
+  }
+  return args[index + 1];
+}
+
+async function reconciliationInventory({ database = db } = {}) {
+  return reconciliation.list({ db: database });
+}
+
+async function reconcile(args, { database = db } = {}) {
+  if (!args.includes("--confirm-reconciliation")) {
+    throw new Error("reconcile requires --confirm-reconciliation");
+  }
+  return reconciliation.resolve({
+    requestId: flagValue(args, "--request-id"),
+    itemType: flagValue(args, "--item-type"),
+    itemId: flagValue(args, "--item-id"),
+    decision: flagValue(args, "--decision"),
+    expectedRevision: flagValue(args, "--expected-revision"),
+    reason: flagValue(args, "--reason"),
+    evidenceRef: flagValue(args, "--evidence-ref"),
+  }, { db: database });
 }
 
 async function rollback(args, { database = db, migrate = migrateDown, env = process.env } = {}) {
@@ -522,6 +565,8 @@ async function main(args = process.argv.slice(2)) {
   if (command === "migrate") result = await migratePhase17();
   else if (command === "status") result = await status();
   else if (command === "readiness") result = await readiness();
+  else if (command === "reconcile-list") result = await reconciliationInventory();
+  else if (command === "reconcile") result = await reconcile(args.slice(1));
   else if (command === "credential-inventory") result = await credentialInventory();
   else if (command === "verify-role-profiles") result = await verifyRoleProfiles(args.slice(1));
   else if (command === "fingerprint-credentials") result = await fingerprintCredentials(args.slice(1));
@@ -532,7 +577,7 @@ async function main(args = process.argv.slice(2)) {
   else if (command === "bootstrap-roles") result = await bootstrapRoles(args.slice(1));
   else if (command === "provision-role") result = await provision(args[1], args[2]);
   else if (command === "rollback") result = await rollback(args.slice(1));
-  else throw new Error("Usage: phase17 migrate|status|readiness|credential-inventory|verify-role-profiles [six env files]|fingerprint-credentials --confirm-fingerprint-backfill|adopt-legacy-credentials --confirm-legacy-role-mapping|import-candidate-credentials --confirm-candidate-import|revoke-candidate-credentials --confirm-invalid-candidate-revocation|recover|bootstrap-roles --create-postgres-roles --write-env-profiles|provision-role <principal> <role>|rollback --allow-destructive --confirm-phase17");
+  else throw new Error("Usage: phase17 migrate|status|readiness|reconcile-list|reconcile --request-id <id> --item-type <ROLE_JOB|OUTBOX_EVENT> --item-id <id> --decision <RETRY|DEAD_LETTER> --expected-revision <n> --reason <text> --evidence-ref <ref> --confirm-reconciliation|credential-inventory|verify-role-profiles [six env files]|fingerprint-credentials --confirm-fingerprint-backfill|adopt-legacy-credentials --confirm-legacy-role-mapping|import-candidate-credentials --confirm-candidate-import|revoke-candidate-credentials --confirm-invalid-candidate-revocation|recover|bootstrap-roles --create-postgres-roles --write-env-profiles|provision-role <principal> <role>|rollback --allow-destructive --confirm-phase17");
   console.log(JSON.stringify(result, null, 2));
 }
 
@@ -557,6 +602,8 @@ module.exports = {
   provision,
   provisionOnClient,
   readiness,
+  reconcile,
+  reconciliationInventory,
   revokeCandidateCredentials,
   roleFunctions,
   roleProfile,

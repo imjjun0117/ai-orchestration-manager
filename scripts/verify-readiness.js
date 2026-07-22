@@ -14,6 +14,9 @@ const phase15OperationsMigrationPath = path.join(repoRoot, "src/db/migrations/01
 const channelCredentialsMigrationPath = path.join(repoRoot, "src/db/migrations/016_channel_credentials.up.sql");
 const phase16MigrationPath = path.join(repoRoot, "src/db/migrations/017_workspace_safety.up.sql");
 const phase16ReworkMigrationPath = path.join(repoRoot, "src/db/migrations/017_workspace_safety_rework.up.sql");
+const phase17MigrationPath = path.join(repoRoot, "src/db/migrations/018_durable_control_plane.up.sql");
+const phase17EnrollmentMigrationPath = path.join(repoRoot, "src/db/migrations/019_phase17_credential_enrollment.up.sql");
+const phase17ReconciliationMigrationPath = path.join(repoRoot, "src/db/migrations/020_phase17_operator_reconciliation.up.sql");
 const botRuntimePath = path.join(repoRoot, "bot-runtime.js");
 const phase16CliPath = path.join(repoRoot, "scripts/phase16-workspace.js");
 const phase16SandboxPath = path.join(repoRoot, "src/workspace/sandboxService.js");
@@ -149,6 +152,13 @@ const REQUIRED_DB_COLUMNS = {
   ],
   workspace_finalizations: ["id", "approval_id", "artifact_id", "fencing_token", "target_ref", "status"],
   workspace_safety_events: ["id", "workspace_id", "task_id", "event_type", "event_payload"],
+  role_jobs: ["id", "status", "reconciliation_revision"],
+  outbox_events: ["id", "status", "reconciliation_revision"],
+  phase17_reconciliation_actions: [
+    "id", "request_id", "item_type", "item_id", "decision", "actor_principal",
+    "reason", "evidence_ref", "before_status", "after_status", "before_revision",
+    "after_revision", "snapshot_json", "created_at",
+  ],
 };
 
 function parseArgs(argv) {
@@ -380,6 +390,27 @@ function checkSchemaStatic() {
   ]) {
     assert(phase16ReworkMigration.includes(snippet), `Phase 16 rework migration is missing required snippet: ${snippet}`);
   }
+  for (const [filePath, label] of [
+    [phase17MigrationPath, "Phase 17 control-plane"],
+    [phase17EnrollmentMigrationPath, "Phase 17 enrollment"],
+    [phase17ReconciliationMigrationPath, "Phase 17 reconciliation"],
+  ]) {
+    assert(fs.existsSync(filePath), `${label} migration is missing`);
+  }
+  const phase17ReconciliationMigration = fs.readFileSync(phase17ReconciliationMigrationPath, "utf8");
+  for (const snippet of [
+    "reconciliation_revision BIGINT",
+    "CREATE TABLE phase17_reconciliation_actions",
+    "CREATE OR REPLACE FUNCTION reconcile_phase17_item",
+    "FOR UPDATE",
+    "trg_phase17_reconciliation_actions_append_only",
+    "REVOKE ALL ON FUNCTION reconcile_phase17_item",
+  ]) {
+    assert(
+      phase17ReconciliationMigration.includes(snippet),
+      `Phase 17 reconciliation migration is missing required snippet: ${snippet}`
+    );
+  }
   const botRuntime = fs.readFileSync(botRuntimePath, "utf8");
   for (const snippet of [
     "workspaceWorkflowService.runCoderStage",
@@ -429,6 +460,9 @@ function checkDocs() {
     "docs/phase16/requirements-trace.md",
     "docs/phase16/rollback-plan.md",
     "docs/phase16/reconciliation-runbook.md",
+    "PHASE17.md",
+    "docs/phase17/requirements-trace.md",
+    "docs/phase17/rollback-plan.md",
   ];
   for (const doc of requiredDocs) {
     assert(fs.existsSync(path.join(repoRoot, doc)), `${doc} is missing`);
@@ -490,7 +524,8 @@ async function checkLiveDatabase() {
       "complete_candidate_finalization",
       "reconcile_candidate_finalization",
     ];
-    const requiredFunctions = [...requiredPhase15Functions, ...requiredPhase16Functions];
+    const requiredPhase17Functions = ["reconcile_phase17_item"];
+    const requiredFunctions = [...requiredPhase15Functions, ...requiredPhase16Functions, ...requiredPhase17Functions];
     const { rows: functionRows } = await db.query(
       `SELECT DISTINCT proname
        FROM pg_proc
@@ -525,7 +560,22 @@ async function checkLiveDatabase() {
     );
     assert(
       publicTableGrants.length === 0,
-      `bundled Phase 15 tables still accessible by PUBLIC: ${publicTableGrants.map((row) => row.table_name).join(", ")}`
+      `bundled phase tables still accessible by PUBLIC: ${publicTableGrants.map((row) => row.table_name).join(", ")}`
+    );
+
+    const { rows: botOperatorGrants } = await db.query(
+      `SELECT db_principal
+       FROM bot_role_principals
+       WHERE enabled
+         AND has_function_privilege(
+           db_principal,
+           'public.reconcile_phase17_item(text,text,text,text,bigint,text,text)',
+           'EXECUTE'
+         )`
+    );
+    assert(
+      botOperatorGrants.length === 0,
+      `Phase 17 operator recovery is executable by bot principals: ${botOperatorGrants.map((row) => row.db_principal).join(", ")}`
     );
 
     const { rows: phase16TriggerRows } = await db.query(
@@ -547,11 +597,31 @@ async function checkLiveDatabase() {
     ]) {
       assert(phase16Triggers.has(triggerName), `live DB is missing required Phase 16 trigger ${triggerName}`);
     }
+    const { rows: phase17TriggerRows } = await db.query(
+      `SELECT tgname FROM pg_trigger
+       WHERE NOT tgisinternal AND tgname = ANY($1)`,
+      [[
+        "trg_role_jobs_reconciliation_revision",
+        "trg_outbox_events_reconciliation_revision",
+        "trg_phase17_reconciliation_actions_append_only",
+      ]]
+    );
+    const phase17Triggers = new Set(phase17TriggerRows.map((row) => row.tgname));
+    for (const triggerName of [
+      "trg_role_jobs_reconciliation_revision",
+      "trg_outbox_events_reconciliation_revision",
+      "trg_phase17_reconciliation_actions_append_only",
+    ]) {
+      assert(phase17Triggers.has(triggerName), `live DB is missing required Phase 17 trigger ${triggerName}`);
+    }
 
     const { checksum } = require("../src/db/migrationRunner");
     const migrationChecksums = new Map([
       ["017_workspace_safety", checksum(fs.readFileSync(phase16MigrationPath, "utf8"))],
       ["017_workspace_safety_rework", checksum(fs.readFileSync(phase16ReworkMigrationPath, "utf8"))],
+      ["018_durable_control_plane", checksum(fs.readFileSync(phase17MigrationPath, "utf8"))],
+      ["019_phase17_credential_enrollment", checksum(fs.readFileSync(phase17EnrollmentMigrationPath, "utf8"))],
+      ["020_phase17_operator_reconciliation", checksum(fs.readFileSync(phase17ReconciliationMigrationPath, "utf8"))],
     ]);
     const { rows: migrationRows } = await db.query(
       `SELECT id, checksum FROM schema_migrations WHERE id = ANY($1)`,
