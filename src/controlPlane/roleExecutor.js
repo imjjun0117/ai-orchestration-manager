@@ -8,7 +8,7 @@ const geminiAdapter = require("../adapters/geminiAdapter");
 const gemmaAdapter = require("../adapters/gemmaAdapter");
 const dbDefault = require("../db");
 const workspaceWorkflow = require("../workspace/taskWorkspaceWorkflowService");
-const workspacePolicy = require("../workspace/workspaceExecutionPolicy");
+const workspaceSandbox = require("../workspace/sandboxService");
 const { storeResultArtifact } = require("./resultArtifactService");
 
 const execFileAsync = promisify(execFile);
@@ -94,7 +94,16 @@ async function executeCoder(job, config, { db = dbDefault, env = process.env } =
   };
 }
 
-async function executeQa(job, config, { db = dbDefault, env = process.env } = {}) {
+async function executeQa(
+  job,
+  config,
+  {
+    db = dbDefault,
+    env = process.env,
+    runSandboxed = workspaceSandbox.runSandboxed,
+    storeArtifact = storeResultArtifact,
+  } = {}
+) {
   if (!job.input_artifact_id) throw new Error("QA requires an input artifact");
   const { rows } = await db.query(
     `SELECT a.artifact_hash, w.workspace_path
@@ -104,19 +113,30 @@ async function executeQa(job, config, { db = dbDefault, env = process.env } = {}
   );
   const input = rows[0];
   if (!input) throw new Error("QA input artifact has no isolated workspace");
-  await workspacePolicy.assertRegisteredAgentWorkspace({
-    agentName: "qa", taskId: job.task_id, cwd: input.workspace_path, env,
-  }, { db });
-  const script = String(env.QA_NPM_SCRIPT || "test");
+  const script = String(env.QA_NPM_SCRIPT || "test").trim();
   if (!/^[a-zA-Z0-9:_-]+$/.test(script)) throw new Error("QA_NPM_SCRIPT contains unsupported characters");
-  const result = await execFileAsync("npm", ["run", script], {
-    cwd: path.resolve(input.workspace_path),
-    timeout: Number.parseInt(env.QA_TIMEOUT_MS || "900000", 10),
-    maxBuffer: 16 * 1024 * 1024,
-  });
-  const artifact = await storeResultArtifact({
+  const result = await runSandboxed({
+    taskId: job.task_id,
+    agentName: "qa",
+    workspacePath: path.resolve(input.workspace_path),
+    command: "npm",
+    args: ["run", script],
+    backend: "container",
+    image: env.SANDBOX_CONTAINER_IMAGE,
+    timeoutMs: Number.parseInt(env.QA_TIMEOUT_MS || "900000", 10),
+    maxOutputBytes: 16 * 1024 * 1024,
+  }, { db, env });
+  const artifact = await storeArtifact({
     taskId: job.task_id, role: config.role, jobType: job.job_type,
-    result: { stdout: result.stdout.slice(-12000), inputArtifactHash: input.artifact_hash },
+    result: {
+      stdout: result.stdout.slice(-12000),
+      inputArtifactHash: input.artifact_hash,
+      sandbox: {
+        backend: result.policy.backend,
+        network: result.policy.network,
+        rootFilesystem: result.policy.rootFilesystem,
+      },
+    },
     createdBy: config.instanceId,
   }, { db });
   return { outputArtifactId: artifact.id, result: { passed: true, artifactHash: artifact.artifact_hash } };
@@ -141,4 +161,4 @@ async function executeRoleJob(job, config, options = {}) {
   return executeSafeRole(job, config, options);
 }
 
-module.exports = { executeRoleJob, jobPrompt };
+module.exports = { executeQa, executeRoleJob, jobPrompt };

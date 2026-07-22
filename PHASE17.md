@@ -72,6 +72,34 @@ npm run multibot:phase17 -- \
 
 로컬 운영에서는 이 값이 없으면 runner가 `PHASE17_CONTROL_ENV_FILE` 또는 기본 `.env`의 `DATABASE_URL`만 읽어 사용합니다. 해당 파일의 다른 값과 평문 token은 child process에 병합하지 않습니다.
 
+## macOS 상시 실행
+
+터미널 세션과 무관하게 여섯 봇을 유지하려면 `launchd` LaunchAgent를 사용합니다. 저장소의 렌더러는 shell을 거치지 않고 Node와 여섯 역할 프로필을 정확한 argv로 고정하며, plist에는 token, master key, `DATABASE_URL`을 넣지 않습니다.
+
+```sh
+npm run launchd:phase17 -- paths
+npm run launchd:phase17 -- render
+npm run launchd:phase17 -- verify "$HOME/Library/LaunchAgents/com.ai-manager.phase17.plist"
+```
+
+설치 전 `.env.phase17-runtime` 디렉터리를 `0700`으로 만들고 렌더링한 plist를 `~/Library/LaunchAgents/com.ai-manager.phase17.plist`에 저장합니다. LaunchAgent 파일은 `0600`, 로그는 plist의 `Umask=0077` 정책을 사용합니다. 등록은 현재 GUI 사용자 도메인의 `launchctl bootstrap gui/$(id -u) ...`로 수행합니다. `RunAtLoad`와 `KeepAlive`가 활성화되어 로그인 세션에서 비정상 종료 시 전체 supervisor를 다시 기동합니다.
+
+서비스 전환 때는 먼저 기존 터미널 supervisor에 `SIGTERM`을 보내 여섯 인스턴스가 모두 `OFFLINE`인지 확인한 후 LaunchAgent를 등록해야 합니다. 중복 실행은 허용하지 않습니다. 설정 변경은 LaunchAgent를 `bootout`한 상태에서 역할 프로필에 적용하고 다시 `bootstrap`합니다.
+
+실운영 전환은 여섯 프로필의 `MULTIBOT_ROLE_MODE=enforced`, `ROLE_WORKER_EXECUTION=active`를 함께 사용합니다. runner는 여섯 프로필의 모드가 하나라도 다르면 기동 전에 거부합니다. Coder/QA에는 같은 절대경로의 `ISOLATED_WORKSPACE_ROOT`, `ISOLATED_WORKSPACE_MODE=true`, `CODER_WRITE_ENABLED=true`가 필요하고 root 권한은 정확히 `0700`이어야 합니다.
+
+Coder 프로필의 `WORKSPACE_DIR`는 백업된 bare canonical repository여야 하며 non-bare working copy는 거부됩니다. QA 프로필은 `ISOLATED_SANDBOX_BACKEND=container`, 로컬에 존재하는 고정 `SANDBOX_CONTAINER_IMAGE`, 선택적 `QA_NPM_SCRIPT`를 사용합니다. QA는 등록된 task workspace 하나만 read-write mount하고 network, root filesystem, capabilities를 차단한 컨테이너에서 실행되며 host `npm` fallback은 없습니다.
+
+```sh
+docker build --file docker/phase17-qa.Dockerfile \
+  --tag ai-manager-qa:phase17-6066cd90dbb0 .
+docker image inspect --format '{{.Id}}' ai-manager-qa:phase17-6066cd90dbb0
+git clone --bare --no-local /absolute/path/to/ai-manager \
+  /protected/runtime/path/canonical.git
+```
+
+`.dockerignore`는 build context를 Dockerfile과 `package.json`/`package-lock.json`으로 제한해 `.env` 및 역할 프로필이 daemon으로 전달되지 않게 합니다. runtime 프로필에는 mutable tag보다 위 inspect가 반환한 `sha256:...` image ID를 저장합니다. 전환 후 `npm run phase17 -- readiness`가 blocker 없이 통과한 다음 비중요 사용자 작업 한 건으로 전체 흐름을 확인합니다.
+
 ## 역할별 Discord 발신 ID 검증
 
 Phase 17 Gate 승인 전에는 `shadow` 모드를 유지한 채 아래 명령으로 여섯 역할 계정의 실제 발신 ID를 두 차례씩 검증합니다. 스크립트는 각 계정이 같은 테스트 채널에 bot-authored `!task` 마커를 보내게 하고, Discord에서 다시 조회한 author ID와 DB의 `bot_instances` 역할 바인딩이 일치하는지 확인합니다. Manager ingress가 12개 메시지를 모두 거부하고 `discord_event_receipts`를 만들지 않은 것도 함께 검사합니다.

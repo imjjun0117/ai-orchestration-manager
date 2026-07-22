@@ -2,10 +2,11 @@
 
 const fs = require("node:fs");
 const path = require("node:path");
-const { spawn } = require("node:child_process");
+const { execFileSync, spawn } = require("node:child_process");
 const dotenv = require("dotenv");
 const { Pool } = require("pg");
 const { loadRoleConfig, validateSixRoleSet } = require("../src/controlPlane/roleConfig");
+const { validateContainerImage } = require("../src/workspace/sandboxService");
 
 const repoRoot = path.resolve(__dirname, "..");
 
@@ -31,9 +32,107 @@ function loadConfig(file) {
   return { ...config, envPath, parsed, env };
 }
 
-async function preflight(configs, controlDatabaseUrl) {
+function requiredProfileValue(config, name) {
+  const value = String(config.parsed?.[name] || "").trim();
+  if (!value) throw new Error(`${config.role} profile requires ${name}`);
+  return value;
+}
+
+function profileEnabled(config, name) {
+  return requiredProfileValue(config, name).toLowerCase() === "true";
+}
+
+function defaultGitIsBare(repository) {
+  return execFileSync("git", ["-C", repository, "rev-parse", "--is-bare-repository"], {
+    encoding: "utf8",
+    stdio: ["ignore", "pipe", "pipe"],
+  }).trim() === "true";
+}
+
+function defaultInspectImage(image) {
+  return execFileSync("docker", ["image", "inspect", "--format", "{{.Id}}", image], {
+    encoding: "utf8",
+    stdio: ["ignore", "pipe", "pipe"],
+  }).trim();
+}
+
+function assertDirectory(directory, label, { fileSystem = fs, requiredMode = null } = {}) {
+  if (!path.isAbsolute(directory)) throw new Error(`${label} must be an absolute path`);
+  const stat = fileSystem.statSync(directory);
+  if (!stat.isDirectory()) throw new Error(`${label} must be a directory`);
+  if (requiredMode !== null && (stat.mode & 0o777) !== requiredMode) {
+    throw new Error(`${label} permissions must be ${requiredMode.toString(8).padStart(4, "0")}`);
+  }
+}
+
+function realpath(fileSystem, value) {
+  const native = fileSystem.realpathSync?.native;
+  return native ? native(value) : fileSystem.realpathSync(value);
+}
+
+function validateExecutionTopology(
+  configs,
+  {
+    fileSystem = fs,
+    gitIsBare = defaultGitIsBare,
+    inspectImage = defaultInspectImage,
+  } = {}
+) {
+  const modes = new Set(configs.map((config) => config.mode));
+  const executionModes = new Set(configs.map((config) => config.executionMode));
+  if (modes.size !== 1) throw new Error("all six role profiles must use the same MULTIBOT_ROLE_MODE");
+  if (executionModes.size !== 1) throw new Error("all six role profiles must use the same ROLE_WORKER_EXECUTION");
+  const [mode] = modes;
+  const [executionMode] = executionModes;
+  if (mode !== "enforced") {
+    if (executionMode === "active") throw new Error("ROLE_WORKER_EXECUTION=active requires MULTIBOT_ROLE_MODE=enforced");
+    return { mode, executionMode };
+  }
+  if (executionMode !== "active") {
+    throw new Error("MULTIBOT_ROLE_MODE=enforced requires ROLE_WORKER_EXECUTION=active for all six profiles");
+  }
+
+  const coder = configs.find((config) => config.role === "coder");
+  const qa = configs.find((config) => config.role === "qa");
+  for (const config of [coder, qa]) {
+    if (!profileEnabled(config, "ISOLATED_WORKSPACE_MODE")) {
+      throw new Error(`${config.role} profile requires ISOLATED_WORKSPACE_MODE=true`);
+    }
+    if (!profileEnabled(config, "CODER_WRITE_ENABLED")) {
+      throw new Error(`${config.role} profile requires CODER_WRITE_ENABLED=true`);
+    }
+  }
+  const coderRoot = requiredProfileValue(coder, "ISOLATED_WORKSPACE_ROOT");
+  const qaRoot = requiredProfileValue(qa, "ISOLATED_WORKSPACE_ROOT");
+  if (coderRoot !== qaRoot) throw new Error("coder and qa profiles must use the same ISOLATED_WORKSPACE_ROOT");
+  assertDirectory(coderRoot, "ISOLATED_WORKSPACE_ROOT", { fileSystem, requiredMode: 0o700 });
+
+  const canonical = requiredProfileValue(coder, "WORKSPACE_DIR");
+  assertDirectory(canonical, "coder WORKSPACE_DIR", { fileSystem });
+  if (!gitIsBare(canonical)) throw new Error("coder WORKSPACE_DIR must be a bare canonical repository");
+  const realCanonical = realpath(fileSystem, canonical);
+  const realIsolationRoot = realpath(fileSystem, coderRoot);
+  if (realCanonical === realIsolationRoot
+      || realCanonical.startsWith(`${realIsolationRoot}${path.sep}`)
+      || realIsolationRoot.startsWith(`${realCanonical}${path.sep}`)) {
+    throw new Error("canonical repository and isolation root must not contain each other");
+  }
+
+  if (requiredProfileValue(qa, "ISOLATED_SANDBOX_BACKEND").toLowerCase() !== "container") {
+    throw new Error("qa profile requires ISOLATED_SANDBOX_BACKEND=container");
+  }
+  const image = validateContainerImage(requiredProfileValue(qa, "SANDBOX_CONTAINER_IMAGE"));
+  if (!inspectImage(image)) throw new Error("qa container image could not be verified locally");
+  const qaScript = String(qa.parsed?.QA_NPM_SCRIPT || "test").trim();
+  if (!/^[a-zA-Z0-9:_-]+$/.test(qaScript)) throw new Error("QA_NPM_SCRIPT contains unsupported characters");
+  return { mode, executionMode, canonical: realCanonical, isolationRoot: realIsolationRoot, qaImage: image };
+}
+
+async function preflight(configs, controlDatabaseUrl, { PoolClass = Pool } = {}) {
   if (!controlDatabaseUrl) throw new Error("MULTIBOT_CONTROL_DATABASE_URL is required for six-role credential preflight");
-  const control = new Pool({ connectionString: controlDatabaseUrl });
+  validateSixRoleSet(configs);
+  validateExecutionTopology(configs);
+  const control = new PoolClass({ connectionString: controlDatabaseUrl });
   try {
     const { rows } = await control.query(
       `SELECT bot_instance_id, status, metadata_json->>'tokenFingerprint' AS token_fingerprint
@@ -47,7 +146,7 @@ async function preflight(configs, controlDatabaseUrl) {
         throw new Error(`ACTIVE fingerprinted Discord credential is missing for ${config.instanceId}`);
       }
       config.tokenFingerprint = credential.token_fingerprint;
-      const rolePool = new Pool({ connectionString: config.databaseUrl });
+      const rolePool = new PoolClass({ connectionString: config.databaseUrl });
       try {
         const principal = await rolePool.query("SELECT SESSION_USER AS principal");
         const binding = await control.query(
@@ -122,4 +221,10 @@ if (require.main === module) main().catch((error) => {
   process.exitCode = 1;
 });
 
-module.exports = { loadConfig, main, preflight, resolveControlDatabaseUrl };
+module.exports = {
+  loadConfig,
+  main,
+  preflight,
+  resolveControlDatabaseUrl,
+  validateExecutionTopology,
+};

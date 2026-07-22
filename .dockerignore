@@ -1,0 +1,6 @@
+*
+!.dockerignore
+!docker/
+!docker/phase17-qa.Dockerfile
+!package.json
+!package-lock.json
