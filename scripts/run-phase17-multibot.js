@@ -95,6 +95,11 @@ function validateExecutionTopology(
   const coder = configs.find((config) => config.role === "coder");
   const qa = configs.find((config) => config.role === "qa");
   const manager = configs.find((config) => config.role === "manager");
+  const planner = configs.find((config) => config.role === "planner");
+  const plannerModel = requiredProfileValue(planner, "CLAUDE_MODEL");
+  if (plannerModel !== "claude-opus-4-8") {
+    throw new Error("planner CLAUDE_MODEL must be claude-opus-4-8");
+  }
   for (const config of [manager, coder, qa]) {
     if (!profileEnabled(config, "ISOLATED_WORKSPACE_MODE")) {
       throw new Error(`${config.role} profile requires ISOLATED_WORKSPACE_MODE=true`);
@@ -143,6 +148,7 @@ function validateExecutionTopology(
     isolationRoot: realIsolationRoot,
     qaImage: image,
     finalizerActorId,
+    plannerModel,
   };
 }
 

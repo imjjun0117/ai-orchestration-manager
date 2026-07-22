@@ -8,11 +8,11 @@
 | MB-004 DB control channel | workflow/run/node/event/job/outbox tables and transaction APIs | PostgreSQL integration suite |
 | MB-005 role-author publication | role-scoped outbox dispatcher and instance-bound Discord credential | shadow projection test; 6 roles × 2 rounds live transport messages match DB-bound author IDs |
 | MB-006 correlation and identity | task/workflow/job/publication correlation fields and deterministic marker | schema/integration assertions |
-| MB-007 capability restriction | `phase17_job_type_allowed`, principal binding, Manager-only grants | privilege revocation and negative tests |
+| MB-007 capability restriction | `phase17_job_type_allowed`, principal binding, Manager-only grants, current-claim-bound skill/process/command-log APIs | privilege revocation, wrong-task rejection, and post-completion denial tests |
 | MB-008 pause/recovery safety | Phase 16 task control and workspace fencing retained; Phase 17 job watchdog | Phase 16 regression plus lease recovery tests |
 | MB-009 restart recovery | instance heartbeat, startup compensation, claim token, lease expiry, retry/reconciliation/dead-letter, operator-only revision-fenced reconciliation with append-only audit | safe/unsafe expiry and re-claim race; idempotent operator retry/dead-letter, stale revision rejection, 20-way single winner; six exact-process SIGKILL/restart cycles; six Gateway Resumes; six REST rate-limit waits and recovered reads; final OFFLINE cleanup |
 | MB-010 token non-disclosure | hidden node-start prompt, AES-GCM encryption, principal-bound store/retrieve/revoke, runner plaintext rejection | prompt/store non-disclosure unit tests, cross-role DB rejection, PUBLIC revocation, reviewer scan |
-| MB-011 operations | `!team`, `!health`, `!roles`, `!instance`, outbox response | command unit test; live Discord smoke pending |
+| MB-011 operations | `!team`, `!health`, `!roles`, `!instance`, approval usage feedback, outbox response | command and invalid-rejection feedback tests; live Discord smoke pending |
 | MB-012 six-env runner | `run-phase17-multibot.js` | six principal/profile preflight, simultaneous six-account login, and per-role forced restart smoke pass |
 | MB-013 six-role E2E | six workflow definitions and Manager advancement | durable DB graph test; live Shadow workflow completed through all five worker roles and two Manager approvals |
 | ARC-001 transactional outbox | workflow transitions and outbox rows in stored procedures; operator retry resets publication for marker re-check | outbox single claim, uncertain delivery, shadow projection, audited retry/dead-letter tests |

@@ -25,6 +25,7 @@ const PHASE17_MIGRATIONS = Object.freeze([
   "019_phase17_credential_enrollment",
   "020_phase17_operator_reconciliation",
   "021_phase17_workflow_approvals",
+  "022_phase17_canary_hardening",
 ]);
 
 const ROLE_PROFILES = Object.freeze(ROLES.map((role) => Object.freeze({
@@ -57,6 +58,10 @@ function commonFunctions() {
     "revoke_phase17_channel_credential(TEXT,TEXT,TEXT)",
     "complete_outbox_event(TEXT,TEXT,TEXT)", "suppress_outbox_event(TEXT,TEXT,TEXT)",
     "fail_outbox_event(TEXT,TEXT,TEXT,TEXT,TEXT,BOOLEAN,INTEGER)",
+    "get_phase17_task_skill(TEXT,VARCHAR)",
+    "record_phase17_task_process(TEXT,VARCHAR,INTEGER,INTEGER,TEXT)",
+    "clear_phase17_task_process(TEXT,VARCHAR,INTEGER)",
+    "append_phase17_command_log(TEXT,VARCHAR,TEXT,TEXT,TEXT,TEXT,INTEGER,BOOLEAN,INTEGER,BOOLEAN,BOOLEAN)",
   ];
 }
 
@@ -144,6 +149,7 @@ function roleProfile({ role, instanceId, databaseUrl, masterKey, masterKeyVersio
     envLine("DATABASE_URL", databaseUrl),
     envLine("MULTIBOT_ROLE_MODE", "shadow"),
     envLine("ROLE_WORKER_EXECUTION", "dry-run"),
+    ...(role === "planner" ? [envLine("CLAUDE_MODEL", "claude-opus-4-8")] : []),
     envLine("CHANNEL_TOKEN_MASTER_KEY", masterKey),
     envLine("CHANNEL_TOKEN_MASTER_KEY_VERSION", masterKeyVersion),
     "",
@@ -474,7 +480,13 @@ async function readiness({ database = db } = {}) {
               WHERE action.item_type='OUTBOX_EVENT' AND action.item_id=event.id
                 AND action.after_status=event.status
                 AND action.after_revision=event.reconciliation_revision
-            )) AS unhealthy_outbox
+            )) AS unhealthy_outbox,
+         (SELECT COUNT(*)::int
+          FROM workflow_runs run
+          JOIN tasks task ON task.id = run.task_id
+          WHERE run.status = 'REJECTED'
+            AND (task.status <> 'REJECTED' OR task.lifecycle_status <> 'REJECTED'))
+           AS inconsistent_terminal_tasks
        FROM role_jobs`
     ),
   ]);
@@ -495,6 +507,7 @@ async function readiness({ database = db } = {}) {
   if (credential.missing_fingerprints > 0) blockers.push("ACTIVE Discord credentials require fingerprint backfill/rekey");
   if (definitions.rows[0].count < 6) blockers.push("Phase 17 workflow definitions are incomplete");
   if (queue.unhealthy_jobs > 0 || queue.unhealthy_outbox > 0) blockers.push("job/outbox reconciliation is required");
+  if (queue.inconsistent_terminal_tasks > 0) blockers.push("rejected workflow/task state reconciliation is required");
   return {
     readyForShadowSixBotSmoke: blockers.length === 0,
     blockers,

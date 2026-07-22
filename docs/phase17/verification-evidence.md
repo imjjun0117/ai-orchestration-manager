@@ -2,8 +2,8 @@
 
 ## Automated checks
 
-- `npm test`: PASS — 80 tests passed; four environment-gated suites skipped.
-- `npm run test:phase17:db`: PASS — 15/15 disposable PostgreSQL tests, including principal-bound runtime enrollment/revocation, operator reconciliation, explicit role-job retry guard rejection, sibling dead-letter state, and the real inventory query.
+- `npm test`: PASS — 109 tests passed; four environment-gated suites skipped.
+- `npm run test:phase17:db`: PASS — 20/20 disposable PostgreSQL tests, including principal-bound runtime enrollment/revocation, current-claim-bound skill/process/command logging, rejected-task status synchronization, operator reconciliation, explicit role-job retry guard rejection, sibling dead-letter state, and the real inventory query.
 - `npm run test:phase15:db`: PASS — 20/20 governance and credential regression tests.
 - `npm run test:phase16:db`: PASS — 11/11 workspace, finalization, fencing, and rollback regression tests.
 - `npm run test:phase16:container`: PASS — network, root-write, non-root, and resource isolation policy.
@@ -19,6 +19,13 @@
 - interactive `node bot.js` menu smoke: PASS — the Phase 17 six-bot option is the default and exit completed without touching credentials; the non-TTY invocation failed before consuming input.
 
 The Phase 17 DB suite covers PUBLIC privilege revocation, principal-role negative paths, 20-way duplicate ingress, wrong-role claim, 20-way atomic claim, Manager-separated advancement, approval redelivery, stale completion, safe/unsafe lease recovery, immediate re-claim race protection, outbox reconciliation, operator role-job/outbox retry and dead-letter decisions, repeated request idempotency, stale revision rejection, 20-way reconciliation single-winner behavior, append-only audit enforcement, shadow publication, and rollback preservation.
+
+## Active canary hardening
+
+- Planner 모델은 실행 프로필과 CLI argv 모두에서 `claude-opus-4-8`로 고정된다. 종료 코드 0으로 반환된 사용량/인증 오류 문구와 빈 출력도 `CLAUDE_PROVIDER_UNAVAILABLE` 또는 `CLAUDE_EMPTY_RESPONSE`로 실패 처리된다.
+- migration `022_phase17_canary_hardening`은 역할 DB principal에 테이블 전체 쓰기 권한을 주지 않는다. 실행 중인 자기 claim/task에 한해서만 skill 조회, PID 기록/정리, command log 추가를 허용하며 다른 task와 완료된 claim은 거부한다.
+- workflow run이 `REJECTED`로 전환되면 레거시 `tasks.status`와 `lifecycle_status`를 함께 동기화하고, readiness가 남은 불일치를 차단한다.
+- 사유 없는 `!reject` 등 안전하게 설명 가능한 승인 오류는 감사 가능한 Manager outbox 응답으로 한글 사용법을 돌려준다.
 
 Enrollment verification covers the `node bot.js` six-role bulk wizard plus direct role-node fallback, hidden TTY prompting, AES-GCM storage, plaintext absence from DB parameters/output, ACTIVE preserve/replace, six-target duplicate rejection, non-TTY fail-closed behavior, invalid-token revocation, immediate pool cleanup, and live execute privileges for all six role principals. A live QA TTY launch displayed the hidden prompt and was cancelled without entering or storing a token; the instance returned to `OFFLINE`.
 

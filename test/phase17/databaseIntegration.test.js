@@ -87,6 +87,7 @@ if (!enabled) {
     await migrateUp("019_phase17_credential_enrollment", { pool });
     await migrateUp("020_phase17_operator_reconciliation", { pool });
     await migrateUp("021_phase17_workflow_approvals", { pool });
+    await migrateUp("022_phase17_canary_hardening", { pool });
     phase17Applied = true;
     for (const role of ["manager", "planner", "coder", "reviewer", "qa", "summarizer"]) {
       await register(role, `${role === "manager" ? "manager" : role}-01`);
@@ -96,6 +97,7 @@ if (!enabled) {
   after(async () => {
     if (pool) {
       if (phase17Applied) {
+        await migrateDown("022_phase17_canary_hardening", { pool, allowDestructive: true }).catch(() => {});
         await migrateDown("021_phase17_workflow_approvals", { pool, allowDestructive: true }).catch(() => {});
         await migrateDown("020_phase17_operator_reconciliation", { pool, allowDestructive: true }).catch(() => {});
         await migrateDown("019_phase17_credential_enrollment", { pool, allowDestructive: true }).catch(() => {});
@@ -118,6 +120,16 @@ if (!enabled) {
        WHERE routine_schema='public' AND grantee='PUBLIC' AND routine_name LIKE '%role_job%'`
     );
     assert.deepEqual(routines.rows, []);
+    const canaryRoutines = await pool.query(
+      `SELECT routine_name FROM information_schema.routine_privileges
+       WHERE routine_schema='public' AND grantee='PUBLIC'
+         AND routine_name IN (
+           'phase17_instance_owns_running_task','get_phase17_task_skill',
+           'record_phase17_task_process','clear_phase17_task_process',
+           'append_phase17_command_log','phase17_sync_rejected_task_status'
+         )`
+    );
+    assert.deepEqual(canaryRoutines.rows, []);
     const tables = await pool.query(
       `SELECT table_name FROM information_schema.table_privileges
        WHERE table_schema='public' AND grantee='PUBLIC'
@@ -136,6 +148,77 @@ if (!enabled) {
          AND routine_name IN ('reconcile_phase17_item','phase17_bump_reconciliation_revision')`
     );
     assert.deepEqual(reconciliationRoutines.rows, []);
+  });
+
+  test("claimed role jobs use bounded skill, process, and command-log APIs", async () => {
+    const accepted = await receive("bounded-audit", "bounded-audit", "phase17-planner-v1");
+    await pool.query(
+      `INSERT INTO skills(id,name,allowed_commands,blocked_commands)
+       VALUES ('phase17-bounded-skill','bounded',ARRAY['git status'],ARRAY['rm'])`
+    );
+    await pool.query("UPDATE tasks SET selected_skill_id='phase17-bounded-skill' WHERE id=$1", [accepted.accepted_task_id]);
+    const job = await claim("planner", "planner-01");
+    assert.equal(job.task_id, accepted.accepted_task_id);
+
+    const skill = (await pool.query(
+      "SELECT * FROM get_phase17_task_skill('planner-01',$1)",
+      [accepted.accepted_task_id]
+    )).rows[0];
+    assert.deepEqual(skill.allowed_commands, ["git status"]);
+    await assert.rejects(
+      pool.query("SELECT * FROM get_phase17_task_skill('planner-01','task-not-owned')"),
+      /active claimed task/
+    );
+
+    await pool.query(
+      "UPDATE tasks SET current_pid=111,current_owner_instance_id='stale-planner' WHERE id=$1",
+      [accepted.accepted_task_id]
+    );
+    assert.equal((await pool.query(
+      "SELECT record_phase17_task_process('planner-01',$1,43210,43210,'test-host') AS recorded",
+      [accepted.accepted_task_id]
+    )).rows[0].recorded, true);
+    const processRow = (await pool.query(
+      "SELECT current_pid,current_owner_instance_id FROM tasks WHERE id=$1",
+      [accepted.accepted_task_id]
+    )).rows[0];
+    assert.deepEqual(processRow, { current_pid: 43210, current_owner_instance_id: "planner-01" });
+
+    const logId = (await pool.query(
+      `SELECT append_phase17_command_log(
+         'planner-01',$1,'claude','claude -p plan','ok',NULL,0,FALSE,5,FALSE,FALSE
+       ) AS id`,
+      [accepted.accepted_task_id]
+    )).rows[0].id;
+    assert.equal((await pool.query("SELECT task_id,blocked FROM command_logs WHERE id=$1", [logId])).rows[0].blocked, false);
+    assert.equal((await pool.query(
+      "SELECT clear_phase17_task_process('planner-01',$1,43210) AS cleared",
+      [accepted.accepted_task_id]
+    )).rows[0].cleared, true);
+
+    await complete("planner", "planner-01", job);
+    await assert.rejects(
+      pool.query(
+        "SELECT append_phase17_command_log('planner-01',$1,'claude','late',NULL,NULL,0,FALSE,1,FALSE,FALSE)",
+        [accepted.accepted_task_id]
+      ),
+      /active claimed task/
+    );
+  });
+
+  test("rejected workflow synchronizes both task status projections", async () => {
+    const accepted = await receive("reject-sync", "reject-sync", "phase17-planner-v1");
+    await pool.query(
+      "UPDATE workflow_runs SET status='REJECTED',completed_at=CURRENT_TIMESTAMP WHERE id=$1",
+      [accepted.accepted_workflow_run_id]
+    );
+    const task = (await pool.query(
+      "SELECT status,lifecycle_status FROM tasks WHERE id=$1",
+      [accepted.accepted_task_id]
+    )).rows[0];
+    assert.deepEqual(task, { status: "REJECTED", lifecycle_status: "REJECTED" });
+    await pool.query("UPDATE role_jobs SET status='CANCELLED' WHERE workflow_run_id=$1", [accepted.accepted_workflow_run_id]);
+    await pool.query("UPDATE workflow_nodes SET status='CANCELLED' WHERE workflow_run_id=$1", [accepted.accepted_workflow_run_id]);
   });
 
   test("runtime credential enrollment is instance-bound and can reactivate then revoke its own row", async () => {
@@ -830,6 +913,7 @@ if (!enabled) {
 
   test("down/up rollback preserves legacy tasks and reapplies cleanly", async () => {
     await pool.query("INSERT INTO tasks(id,title,original_request,status) VALUES ('legacy-phase17','legacy','legacy','DONE')");
+    await migrateDown("022_phase17_canary_hardening", { pool, allowDestructive: true });
     await migrateDown("021_phase17_workflow_approvals", { pool, allowDestructive: true });
     await migrateDown("020_phase17_operator_reconciliation", { pool, allowDestructive: true });
     await migrateDown("019_phase17_credential_enrollment", { pool, allowDestructive: true });
@@ -841,6 +925,7 @@ if (!enabled) {
     await migrateUp("019_phase17_credential_enrollment", { pool });
     await migrateUp("020_phase17_operator_reconciliation", { pool });
     await migrateUp("021_phase17_workflow_approvals", { pool });
+    await migrateUp("022_phase17_canary_hardening", { pool });
     phase17Applied = true;
     assert.equal((await pool.query("SELECT status FROM tasks WHERE id='legacy-phase17'")).rows[0].status, "DONE");
   });

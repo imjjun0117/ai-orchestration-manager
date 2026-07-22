@@ -10,6 +10,7 @@ const {
 } = require("../src/workspace/workspaceExecutionPolicy");
 const { sanitizedEnvironment } = require("../src/workspace/sandboxService");
 const db = require("../src/db");
+const roleAudit = require("../src/controlPlane/roleAuditService");
 const logger = require("./logger");
 
 // 로컬 환경의 CLI 실행을 위해 PATH 환경변수를 확장해 줍니다.
@@ -86,23 +87,10 @@ async function logCommandExecution({
   killed = false,
 }) {
   try {
-    await db.query(
-      `INSERT INTO command_logs
-         (task_id, agent_name, command, stdout, stderr, exit_code, blocked, duration_ms, timed_out, killed)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)`,
-      [
-        taskId,
-        agentName,
-        fullCommand,
-        stdout || null,
-        stderr || null,
-        exitCode,
-        blocked,
-        durationMs,
-        timedOut,
-        killed,
-      ]
-    );
+    await roleAudit.appendCommandLog({
+      taskId, agentName, fullCommand, stdout, stderr, exitCode,
+      blocked, durationMs, timedOut, killed,
+    }, { db });
   } catch (err) {
     logger.error("shell: command_logs 기록 실패", err);
   }
@@ -115,17 +103,9 @@ function currentOwnerInstanceId() {
 async function updateTaskProcess(taskId, { pid, pgid, hostId, ownerInstanceId }) {
   if (!taskId) return;
   try {
-    await db.query(
-      `UPDATE tasks
-       SET current_pid = $2,
-           current_pgid = $3,
-           current_host_id = $4,
-           current_owner_instance_id = $5,
-           updated_at = CURRENT_TIMESTAMP
-       WHERE id = $1`,
-      [taskId, pid, pgid || null, hostId, ownerInstanceId]
-    );
+    await roleAudit.recordTaskProcess(taskId, { pid, pgid, hostId, ownerInstanceId }, { db });
   } catch (err) {
+    if (roleAudit.runtimeInstanceId()) throw err;
     logger.error("shell: task process 기록 실패", err);
   }
 }
@@ -133,16 +113,7 @@ async function updateTaskProcess(taskId, { pid, pgid, hostId, ownerInstanceId })
 async function clearTaskPid(taskId, pid) {
   if (!taskId || !pid) return;
   try {
-    await db.query(
-      `UPDATE tasks
-       SET current_pid = NULL,
-           current_pgid = NULL,
-           current_host_id = NULL,
-           current_owner_instance_id = NULL,
-           updated_at = CURRENT_TIMESTAMP
-       WHERE id = $1 AND current_pid = $2`,
-      [taskId, pid]
-    );
+    await roleAudit.clearTaskProcess(taskId, pid, { db });
   } catch (err) {
     logger.error("shell: current_pid 정리 실패", err);
   }
@@ -243,7 +214,7 @@ async function runCommand(command, args = [], options = {}) {
       const duration = durationMs();
       const cleanStdout = stdout.trim();
       const cleanStderr = stderr.trim();
-      Promise.all([
+      Promise.allSettled([
         pidReady.then(() => clearTaskPid(taskId, childPid)),
         logCommandExecution({
           taskId,
@@ -270,7 +241,7 @@ async function runCommand(command, args = [], options = {}) {
       const cleanStderr = stderr.trim();
       const normalizedError = error instanceof Error ? error : new Error(String(error));
       const stderrForLog = cleanStderr || normalizedError.message;
-      Promise.all([
+      Promise.allSettled([
         pidReady.then(() => clearTaskPid(taskId, childPid)),
         logCommandExecution({
           taskId,
@@ -302,6 +273,16 @@ async function runCommand(command, args = [], options = {}) {
         logger.error("shell: onSpawn 콜백 실행 실패", err);
       }
     }
+
+    pidReady.catch((error) => {
+      if (finished) return;
+      try {
+        sendSignalToChildTree({ pid: childPid, pgid: childPgid, signal: "SIGTERM" });
+      } catch (signalError) {
+        logger.error("shell: PID 감사 실패 후 SIGTERM 전송 실패", signalError);
+      }
+      finishWithReject(error, null);
+    });
 
     if (timeoutMs) {
       timeoutTimer = setTimeout(() => {

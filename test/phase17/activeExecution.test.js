@@ -32,6 +32,9 @@ function configs({ mode = "shadow", executionMode = "dry-run" } = {}) {
         SANDBOX_CONTAINER_IMAGE: "sha256:abcdef1234567890",
         QA_NPM_SCRIPT: "test:phase17",
       } : {}),
+      ...(role === "planner" ? {
+        CLAUDE_MODEL: "claude-opus-4-8",
+      } : {}),
     },
   }));
 }
@@ -62,6 +65,7 @@ test("active six-role topology requires enforced mode, a bare canonical repo, an
   assert.equal(result.canonical, "/private/canonical.git");
   assert.equal(result.isolationRoot, "/private/isolated");
   assert.equal(result.finalizerActorId, "manager-01");
+  assert.equal(result.plannerModel, "claude-opus-4-8");
   assert.equal(inspected, "sha256:abcdef1234567890");
 });
 
@@ -168,6 +172,17 @@ test("active topology binds candidate finalization to the exact Manager and boun
       fileSystem: fakeFileSystem(), gitIsBare: () => true, inspectImage: () => "sha256:local",
     }),
     /approval TTL/
+  );
+});
+
+test("active topology rejects planner model drift from Opus 4.8", () => {
+  const active = configs({ mode: "enforced", executionMode: "active" });
+  active.find(({ role }) => role === "planner").parsed.CLAUDE_MODEL = "fable";
+  assert.throws(
+    () => validateExecutionTopology(active, {
+      fileSystem: fakeFileSystem(), gitIsBare: () => true, inspectImage: () => "sha256:local",
+    }),
+    /CLAUDE_MODEL must be claude-opus-4-8/
   );
 });
 

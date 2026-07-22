@@ -38,7 +38,7 @@ async function executeSafeRole(job, config, { db = dbDefault, env = process.env 
   const result = await adapter.invoke(jobPrompt(job), { workspaceDir: env.WORKSPACE_DIR || process.cwd(), taskId: job.task_id });
   if (result.exitCode !== 0) {
     const error = new Error(result.raw.errorMessage || result.raw.stderr || `${config.role} adapter failed`);
-    error.code = "ROLE_ADAPTER_FAILED";
+    error.code = result.raw.errorCode || "ROLE_ADAPTER_FAILED";
     throw error;
   }
   const artifact = await storeResultArtifact({

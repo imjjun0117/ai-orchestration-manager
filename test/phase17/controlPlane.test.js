@@ -391,6 +391,24 @@ test("approval ingress queues an audited Korean acknowledgement", async () => {
   assert.match(queries[0].params[3], /승인 처리했습니다/);
 });
 
+test("invalid rejection queues a safe Korean usage response instead of disappearing", async () => {
+  const queries = [];
+  const ingress = createManagerIngress({
+    config: { role: "manager", instanceId: "manager-01" },
+    db: { async query(sql, params) { queries.push({ sql, params }); return { rows: [{}] }; } },
+    async resolveApprovalCommand() { throw new Error("!reject requires a rejection reason"); },
+  });
+  const result = await ingress({
+    id: "message-reject", content: "!reject node-1", channelId: "channel-1",
+    author: { id: "user-1", bot: false }, webhookId: null, system: false,
+  });
+  assert.deepEqual(result, {
+    approval: true, command: "!reject", queued: true, resolved: false,
+  });
+  assert.match(queries[0].params[3], /!reject <node-id> <사유>/);
+  assert.doesNotMatch(queries[0].params[3], /database|SQL|stack/i);
+});
+
 test("publication markers are deterministic and do not expose secrets", () => {
   const event = { id: "o1", correlation_id: "c1", event_type: "COMMAND_ACCEPTED", payload_json: { taskId: "t1" } };
   const marker = publication.markerFor(event);
@@ -508,6 +526,11 @@ test("role bootstrap creates six fail-closed principals and secret-safe shadow p
     );
     assert.equal(result.created.length, 6);
     assert.equal(queries.filter(({ sql }) => sql.startsWith("CREATE ROLE")).length, 6);
+    assert.equal(
+      queries.some(({ sql }) => /REVOKE\s+.*(?:tasks|command_logs)/i.test(sql)),
+      false,
+      "role bootstrap must not remove legacy table privileges"
+    );
     assert.doesNotMatch(JSON.stringify(result), /control-secret|master-key-material|generated-password/);
     for (const { role, principal, instanceId } of result.created) {
       const profilePath = path.join(temporaryRoot, ".env.phase17", `.env.${role}`);
@@ -517,6 +540,8 @@ test("role bootstrap creates six fail-closed principals and secret-safe shadow p
       assert.match(contents, new RegExp(`DATABASE_URL=\\"postgres://`));
       assert.match(contents, new RegExp(`${principal}`));
       assert.match(contents, /MULTIBOT_ROLE_MODE="shadow"/);
+      if (role === "planner") assert.match(contents, /CLAUDE_MODEL="claude-opus-4-8"/);
+      else assert.doesNotMatch(contents, /CLAUDE_MODEL=/);
       assert.doesNotMatch(contents, /DISCORD_TOKEN|CHANNEL_TOKEN=/);
       assert.equal(fs.statSync(profilePath).mode & 0o777, 0o600);
     }
@@ -653,12 +678,12 @@ test("readiness reports missing principals, credentials, and instances without s
   const database = {
     async query(sql) {
       if (sql.includes("FROM delivery_phases")) return { rows: [{ id: "phase-16", status: "ACCEPTED" }, { id: "phase-17", status: "IN_PROGRESS" }] };
-      if (sql.includes("FROM schema_migrations")) return { rows: [{ id: "018_durable_control_plane" }, { id: "019_phase17_credential_enrollment" }, { id: "020_phase17_operator_reconciliation" }, { id: "021_phase17_workflow_approvals" }] };
+      if (sql.includes("FROM schema_migrations")) return { rows: [{ id: "018_durable_control_plane" }, { id: "019_phase17_credential_enrollment" }, { id: "020_phase17_operator_reconciliation" }, { id: "021_phase17_workflow_approvals" }, { id: "022_phase17_canary_hardening" }] };
       if (sql.includes("FROM bot_role_principals")) return { rows: [] };
       if (sql.includes("FROM channel_credentials")) return { rows: [{ active_credentials: 0, distinct_fingerprints: 0, missing_fingerprints: 0 }] };
       if (sql.includes("FROM workflow_definitions")) return { rows: [{ count: 6 }] };
       if (sql.includes("FROM bot_instances")) return { rows: [] };
-      if (sql.includes("FROM role_jobs")) return { rows: [{ active_jobs: 0, unhealthy_jobs: 0, pending_outbox: 0, unhealthy_outbox: 0 }] };
+      if (sql.includes("FROM role_jobs")) return { rows: [{ active_jobs: 0, unhealthy_jobs: 0, pending_outbox: 0, unhealthy_outbox: 0, inconsistent_terminal_tasks: 0 }] };
       throw new Error(`unexpected query: ${sql}`);
     },
   };
@@ -745,6 +770,6 @@ test("rollback fails closed for live workflows and undelivered outbox events", a
     migrate: async (id, options) => ({ id, options }),
   });
   assert.equal(queryIndex, 2);
-  assert.deepEqual(result.map(({ id }) => id), ["021_phase17_workflow_approvals", "020_phase17_operator_reconciliation", "019_phase17_credential_enrollment", "018_durable_control_plane"]);
+  assert.deepEqual(result.map(({ id }) => id), ["022_phase17_canary_hardening", "021_phase17_workflow_approvals", "020_phase17_operator_reconciliation", "019_phase17_credential_enrollment", "018_durable_control_plane"]);
   assert.equal(result.every(({ options }) => options.allowDestructive), true);
 });

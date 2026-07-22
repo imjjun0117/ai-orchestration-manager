@@ -18,6 +18,7 @@ function errorResult(error, startedAt) {
     stdout: error && error.stdout ? error.stdout : "",
     stderr: error && error.stderr ? error.stderr : "",
     errorMessage: error && error.message ? error.message : String(error || "알 수 없는 오류"),
+    errorCode: error && error.code ? error.code : "ADAPTER_EXECUTION_FAILED",
   };
 
   return {

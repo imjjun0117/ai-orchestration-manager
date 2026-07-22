@@ -1,6 +1,7 @@
 const db = require("../db");
 const logger = require("../../services/logger");
 const pathGuard = require("./pathGuard");
+const roleAudit = require("../controlPlane/roleAuditService");
 
 // 무조건 차단할 명령 토큰 시퀀스 (15.1 / 23.5 차단 명령)
 const BLOCKED_TOKEN_SEQUENCES = [
@@ -116,12 +117,9 @@ function matchesAnyCommandEntry(command, args, commandList) {
  */
 async function getSkillForTask(taskId) {
   try {
-    const { rows } = await db.query(
-      `SELECT s.* FROM tasks t JOIN skills s ON s.id = t.selected_skill_id WHERE t.id = $1`,
-      [taskId]
-    );
-    return rows[0] || null;
+    return await roleAudit.getTaskSkill(taskId, { db });
   } catch (err) {
+    if (roleAudit.runtimeInstanceId()) throw err;
     logger.error("commandGuard: task의 skill 조회 실패", err);
     return null;
   }
@@ -129,11 +127,17 @@ async function getSkillForTask(taskId) {
 
 async function logBlockedCommand({ taskId, agentName, fullCommand, reason }) {
   try {
-    await db.query(
-      `INSERT INTO command_logs (task_id, agent_name, command, blocked, stderr)
-       VALUES ($1, $2, $3, true, $4)`,
-      [taskId, agentName, fullCommand, reason]
-    );
+    await roleAudit.appendCommandLog({
+      taskId,
+      agentName,
+      fullCommand,
+      stderr: reason,
+      exitCode: null,
+      blocked: true,
+      durationMs: null,
+      timedOut: false,
+      killed: false,
+    }, { db });
   } catch (err) {
     // DB 로깅 실패가 차단 자체를 무력화하면 안 되므로 별도로 로그만 남긴다.
     logger.error("commandGuard: command_logs 기록 실패", err);

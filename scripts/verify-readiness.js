@@ -18,6 +18,7 @@ const phase17MigrationPath = path.join(repoRoot, "src/db/migrations/018_durable_
 const phase17EnrollmentMigrationPath = path.join(repoRoot, "src/db/migrations/019_phase17_credential_enrollment.up.sql");
 const phase17ReconciliationMigrationPath = path.join(repoRoot, "src/db/migrations/020_phase17_operator_reconciliation.up.sql");
 const phase17WorkflowApprovalMigrationPath = path.join(repoRoot, "src/db/migrations/021_phase17_workflow_approvals.up.sql");
+const phase17CanaryHardeningMigrationPath = path.join(repoRoot, "src/db/migrations/022_phase17_canary_hardening.up.sql");
 const botRuntimePath = path.join(repoRoot, "bot-runtime.js");
 const phase16CliPath = path.join(repoRoot, "scripts/phase16-workspace.js");
 const phase16SandboxPath = path.join(repoRoot, "src/workspace/sandboxService.js");
@@ -396,6 +397,7 @@ function checkSchemaStatic() {
     [phase17EnrollmentMigrationPath, "Phase 17 enrollment"],
     [phase17ReconciliationMigrationPath, "Phase 17 reconciliation"],
     [phase17WorkflowApprovalMigrationPath, "Phase 17 workflow approvals"],
+    [phase17CanaryHardeningMigrationPath, "Phase 17 canary hardening"],
   ]) {
     assert(fs.existsSync(filePath), `${label} migration is missing`);
   }
@@ -424,6 +426,24 @@ function checkSchemaStatic() {
     assert(
       phase17WorkflowApprovalMigration.includes(snippet),
       `Phase 17 workflow approval migration is missing required snippet: ${snippet}`
+    );
+  }
+  const phase17CanaryHardeningMigration = fs.readFileSync(phase17CanaryHardeningMigrationPath, "utf8");
+  const hardenedDefinerCount = (
+    phase17CanaryHardeningMigration.match(/SECURITY DEFINER\s+SET search_path = pg_catalog, public/g) || []
+  ).length;
+  assert(hardenedDefinerCount === 6, "all six Phase 17 canary SECURITY DEFINER functions must pin search_path");
+  for (const snippet of [
+    "get_phase17_task_skill",
+    "record_phase17_task_process",
+    "clear_phase17_task_process",
+    "append_phase17_command_log",
+    "trg_phase17_sync_rejected_task_status",
+    "REVOKE ALL ON FUNCTION append_phase17_command_log",
+  ]) {
+    assert(
+      phase17CanaryHardeningMigration.includes(snippet),
+      `Phase 17 canary hardening migration is missing required snippet: ${snippet}`
     );
   }
   const botRuntime = fs.readFileSync(botRuntimePath, "utf8");
@@ -539,7 +559,15 @@ async function checkLiveDatabase() {
       "complete_candidate_finalization",
       "reconcile_candidate_finalization",
     ];
-    const requiredPhase17Functions = ["reconcile_phase17_item"];
+    const requiredPhase17Functions = [
+      "reconcile_phase17_item",
+      "phase17_instance_owns_running_task",
+      "get_phase17_task_skill",
+      "record_phase17_task_process",
+      "clear_phase17_task_process",
+      "append_phase17_command_log",
+      "phase17_sync_rejected_task_status",
+    ];
     const requiredFunctions = [...requiredPhase15Functions, ...requiredPhase16Functions, ...requiredPhase17Functions];
     const { rows: functionRows } = await db.query(
       `SELECT DISTINCT proname
@@ -593,6 +621,28 @@ async function checkLiveDatabase() {
       `Phase 17 operator recovery is executable by bot principals: ${botOperatorGrants.map((row) => row.db_principal).join(", ")}`
     );
 
+    const { rows: boundedAuditGrants } = await db.query(
+      `SELECT db_principal,
+              has_function_privilege(db_principal, 'public.get_phase17_task_skill(text,character varying)', 'EXECUTE') AS can_get_skill,
+              has_function_privilege(db_principal, 'public.record_phase17_task_process(text,character varying,integer,integer,text)', 'EXECUTE') AS can_record_process,
+              has_function_privilege(db_principal, 'public.clear_phase17_task_process(text,character varying,integer)', 'EXECUTE') AS can_clear_process,
+              has_function_privilege(db_principal, 'public.append_phase17_command_log(text,character varying,text,text,text,text,integer,boolean,integer,boolean,boolean)', 'EXECUTE') AS can_log_command,
+              has_table_privilege(db_principal, 'public.tasks', 'UPDATE') AS can_update_tasks,
+              has_table_privilege(db_principal, 'public.command_logs', 'INSERT') AS can_insert_command_logs
+       FROM bot_role_principals
+       WHERE enabled`
+    );
+    for (const grant of boundedAuditGrants) {
+      assert(
+        grant.can_get_skill && grant.can_record_process && grant.can_clear_process && grant.can_log_command,
+        `Phase 17 bounded audit functions are incomplete for ${grant.db_principal}`
+      );
+      assert(
+        !grant.can_update_tasks && !grant.can_insert_command_logs,
+        `Phase 17 principal has broad task/command-log writes: ${grant.db_principal}`
+      );
+    }
+
     const { rows: phase16TriggerRows } = await db.query(
       `SELECT tgname
        FROM pg_trigger
@@ -619,6 +669,7 @@ async function checkLiveDatabase() {
         "trg_role_jobs_reconciliation_revision",
         "trg_outbox_events_reconciliation_revision",
         "trg_phase17_reconciliation_actions_append_only",
+        "trg_phase17_sync_rejected_task_status",
       ]]
     );
     const phase17Triggers = new Set(phase17TriggerRows.map((row) => row.tgname));
@@ -626,6 +677,7 @@ async function checkLiveDatabase() {
       "trg_role_jobs_reconciliation_revision",
       "trg_outbox_events_reconciliation_revision",
       "trg_phase17_reconciliation_actions_append_only",
+      "trg_phase17_sync_rejected_task_status",
     ]) {
       assert(phase17Triggers.has(triggerName), `live DB is missing required Phase 17 trigger ${triggerName}`);
     }
@@ -638,6 +690,7 @@ async function checkLiveDatabase() {
       ["019_phase17_credential_enrollment", checksum(fs.readFileSync(phase17EnrollmentMigrationPath, "utf8"))],
       ["020_phase17_operator_reconciliation", checksum(fs.readFileSync(phase17ReconciliationMigrationPath, "utf8"))],
       ["021_phase17_workflow_approvals", checksum(fs.readFileSync(phase17WorkflowApprovalMigrationPath, "utf8"))],
+      ["022_phase17_canary_hardening", checksum(fs.readFileSync(phase17CanaryHardeningMigrationPath, "utf8"))],
     ]);
     const { rows: migrationRows } = await db.query(
       `SELECT id, checksum FROM schema_migrations WHERE id = ANY($1)`,
