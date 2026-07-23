@@ -21,6 +21,7 @@ const {
   rollback,
   verifyRoleProfiles,
 } = require("../../scripts/phase17-control-plane");
+const { TASK_CONTEXT_COLUMNS } = require("../../src/memory/contextPackageService");
 const { loadRoleConfig, validateSixRoleSet } = require("../../src/controlPlane/roleConfig");
 const { parseCommand } = require("../../src/controlPlane/workflowService");
 const {
@@ -508,6 +509,11 @@ test("role provisioning synchronizes Phase 18 grants after the memory migration"
     },
   };
   await provisionOnClient(client, "new_planner_db", "planner");
+  const taskGrant = queries.find((sql) => sql.includes(' ON tasks TO "new_planner_db"'));
+  assert.ok(taskGrant);
+  for (const column of TASK_CONTEXT_COLUMNS) {
+    assert.match(taskGrant, new RegExp(`(?:\\(|, )${column}(?:, |\\))`));
+  }
   for (const signature of phase18WorkerFunctions()) {
     assert.equal(queries.includes(`REVOKE EXECUTE ON FUNCTION ${signature} FROM "new_planner_db"`), true);
     assert.equal(queries.includes(`GRANT EXECUTE ON FUNCTION ${signature} TO "new_planner_db"`), true);

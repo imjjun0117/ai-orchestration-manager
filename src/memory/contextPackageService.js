@@ -12,6 +12,14 @@ const { loadMemoryPolicy, taskProjectKey } = require("./memoryPolicy");
 const { RetrievalLimiter, rerankCandidates, selectWithinBudget } = require("./retrieval");
 
 const POLICY_VERSION = "phase18-v1";
+const TASK_CONTEXT_COLUMNS = Object.freeze([
+  "id",
+  "title",
+  "original_request",
+  "channel_id",
+  "memory_project_key",
+  "row_version",
+]);
 const limiters = new Map();
 
 function limiterFor(policy) {
@@ -228,7 +236,7 @@ async function buildRoleContext(job, config, legacyPrompt, {
   let task;
   try {
     const { rows: taskRows } = await db.query(
-      `SELECT id, title, original_request, channel_id, memory_project_key, row_version
+      `SELECT ${TASK_CONTEXT_COLUMNS.join(", ")}
        FROM tasks WHERE id = $1`,
       [job.task_id]
     );
@@ -413,6 +421,7 @@ async function shadowQuality({ minimumReports = 5, db = dbDefault } = {}) {
 
 module.exports = {
   POLICY_VERSION,
+  TASK_CONTEXT_COLUMNS,
   buildRoleContext,
   candidateEntry,
   evidenceSummary,

@@ -20,6 +20,10 @@ const phase17ReconciliationMigrationPath = path.join(repoRoot, "src/db/migration
 const phase17WorkflowApprovalMigrationPath = path.join(repoRoot, "src/db/migrations/021_phase17_workflow_approvals.up.sql");
 const phase17CanaryHardeningMigrationPath = path.join(repoRoot, "src/db/migrations/022_phase17_canary_hardening.up.sql");
 const phase18MemoryMigrationPath = path.join(repoRoot, "src/db/migrations/023_phase18_tiered_memory.up.sql");
+const phase18RuntimeGrantMigrationPath = path.join(
+  repoRoot,
+  "src/db/migrations/024_phase18_runtime_task_grants.up.sql"
+);
 const botRuntimePath = path.join(repoRoot, "bot-runtime.js");
 const phase16CliPath = path.join(repoRoot, "scripts/phase16-workspace.js");
 const phase16SandboxPath = path.join(repoRoot, "src/workspace/sandboxService.js");
@@ -477,7 +481,18 @@ function checkSchemaStatic() {
     );
   }
   assert(fs.existsSync(phase18MemoryMigrationPath), "Phase 18 tiered-memory migration is missing");
+  assert(
+    fs.existsSync(phase18RuntimeGrantMigrationPath),
+    "Phase 18 runtime task-grant migration is missing"
+  );
   const phase18MemoryMigration = fs.readFileSync(phase18MemoryMigrationPath, "utf8");
+  const phase18RuntimeGrantMigration = fs.readFileSync(phase18RuntimeGrantMigrationPath, "utf8");
+  assert(
+    phase18RuntimeGrantMigration.includes(
+      "GRANT SELECT (title, memory_project_key) ON TABLE tasks"
+    ),
+    "Phase 18 runtime task-grant migration must grant the context-builder task columns"
+  );
   for (const snippet of [
     "CREATE TABLE memory_sources",
     "CREATE TABLE memory_source_versions",
@@ -804,6 +819,7 @@ async function checkLiveDatabase() {
       ["021_phase17_workflow_approvals", checksum(fs.readFileSync(phase17WorkflowApprovalMigrationPath, "utf8"))],
       ["022_phase17_canary_hardening", checksum(fs.readFileSync(phase17CanaryHardeningMigrationPath, "utf8"))],
       ["023_phase18_tiered_memory", checksum(fs.readFileSync(phase18MemoryMigrationPath, "utf8"))],
+      ["024_phase18_runtime_task_grants", checksum(fs.readFileSync(phase18RuntimeGrantMigrationPath, "utf8"))],
     ]);
     const { rows: migrationRows } = await db.query(
       `SELECT id, checksum FROM schema_migrations WHERE id = ANY($1)`,

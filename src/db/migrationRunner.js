@@ -56,6 +56,10 @@ const MIGRATIONS = Object.freeze({
     up: path.join(__dirname, "migrations", "023_phase18_tiered_memory.up.sql"),
     down: path.join(__dirname, "migrations", "023_phase18_tiered_memory.down.sql"),
   },
+  "024_phase18_runtime_task_grants": {
+    up: path.join(__dirname, "migrations", "024_phase18_runtime_task_grants.up.sql"),
+    down: path.join(__dirname, "migrations", "024_phase18_runtime_task_grants.down.sql"),
+  },
 });
 
 function migrationSource(id, direction) {

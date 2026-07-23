@@ -123,7 +123,9 @@ async function provisionOnClient(client, principal, role, { verifyExists = true 
       if (role !== "manager") await client.query(`GRANT EXECUTE ON FUNCTION ${signature} TO ${quoted}`);
     }
   }
-  await client.query(`GRANT SELECT (id, channel_id, status, row_version, original_request) ON tasks TO ${quoted}`);
+  await client.query(
+    `GRANT SELECT (id, title, channel_id, memory_project_key, status, row_version, original_request) ON tasks TO ${quoted}`
+  );
   await client.query(`GRANT SELECT, INSERT, UPDATE ON discord_publications TO ${quoted}`);
   if (role === "manager") {
     await client.query(`GRANT SELECT ON bot_instances, role_jobs, workflow_definitions, workflow_runs, workflow_nodes, tasks TO ${quoted}`);

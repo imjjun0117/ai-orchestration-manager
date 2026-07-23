@@ -32,6 +32,8 @@ if (!enabled) {
   let pool;
   let principal;
   let phase18Applied = false;
+  let phase18RuntimeGrantsApplied = false;
+  let runtimeReaderRole;
   let primary;
 
   async function bind(role) {
@@ -95,6 +97,7 @@ if (!enabled) {
     pool = new Pool({ connectionString: targetUrl.toString(), max: 40 });
     pool.on("error", () => {});
     principal = (await pool.query("SELECT SESSION_USER AS principal")).rows[0].principal;
+    runtimeReaderRole = `phase18_reader_${process.pid}_${Date.now()}`.replace(/[^a-z0-9_]/g, "_");
     await pool.query(fs.readFileSync(path.resolve(__dirname, "../../src/db/schema.sql"), "utf8"));
     await migrateUp("016_channel_credentials", { pool });
     await migrateUp("017_workspace_safety", { pool });
@@ -108,13 +111,24 @@ if (!enabled) {
       await register(role, `${role}-01`);
     }
     await register("planner", "planner-02");
+    await pool.query(`CREATE ROLE "${runtimeReaderRole}" NOLOGIN`);
+    await pool.query(
+      `INSERT INTO bot_role_principals(db_principal, bot_role, provisioned_by)
+       VALUES ($1,'planner',$2)`,
+      [runtimeReaderRole, principal]
+    );
     await migrateUp("023_phase18_tiered_memory", { pool });
     phase18Applied = true;
+    await migrateUp("024_phase18_runtime_task_grants", { pool });
+    phase18RuntimeGrantsApplied = true;
     primary = await receiveAndClaim("primary");
   });
 
   after(async () => {
     if (pool) {
+      if (phase18RuntimeGrantsApplied) {
+        await migrateDown("024_phase18_runtime_task_grants", { pool, allowDestructive: true }).catch(() => {});
+      }
       if (phase18Applied) await migrateDown("023_phase18_tiered_memory", { pool, allowDestructive: true }).catch(() => {});
       for (const migrationId of [
         "022_phase17_canary_hardening",
@@ -132,6 +146,7 @@ if (!enabled) {
     }
     if (admin) {
       await admin.query(`DROP DATABASE IF EXISTS "${name}" WITH (FORCE)`);
+      if (runtimeReaderRole) await admin.query(`DROP ROLE IF EXISTS "${runtimeReaderRole}"`);
       await admin.end();
     }
   });
@@ -163,6 +178,16 @@ if (!enabled) {
     assert.equal((await pool.query(
       "SELECT memory_project_key FROM tasks WHERE id='task-no-channel'"
     )).rows[0].memory_project_key, "task:task-no-channel");
+  });
+
+  test("runtime task columns are granted to existing worker principals", async () => {
+    const privileges = (await pool.query(
+      `SELECT
+         has_column_privilege($1, 'tasks', 'title', 'SELECT') AS can_read_title,
+         has_column_privilege($1, 'tasks', 'memory_project_key', 'SELECT') AS can_read_project`,
+      [runtimeReaderRole]
+    )).rows[0];
+    assert.deepEqual(privileges, { can_read_title: true, can_read_project: true });
   });
 
   test("ingestion is idempotent and versions sources with immutable stale evidence", async () => {
@@ -537,12 +562,16 @@ if (!enabled) {
   });
 
   test("migration rollback removes only Phase 18 data and reapply backfills legacy tasks", async () => {
+    await migrateDown("024_phase18_runtime_task_grants", { pool, allowDestructive: true });
+    phase18RuntimeGrantsApplied = false;
     await migrateDown("023_phase18_tiered_memory", { pool, allowDestructive: true });
     phase18Applied = false;
     assert.equal((await pool.query("SELECT to_regclass('public.memory_sources') AS table_name")).rows[0].table_name, null);
     assert.ok((await pool.query("SELECT id FROM tasks WHERE id=$1", [primary.job.task_id])).rows[0]);
     await migrateUp("023_phase18_tiered_memory", { pool });
     phase18Applied = true;
+    await migrateUp("024_phase18_runtime_task_grants", { pool });
+    phase18RuntimeGrantsApplied = true;
     const task = (await pool.query(
       "SELECT memory_project_key FROM tasks WHERE id=$1",
       [primary.job.task_id]

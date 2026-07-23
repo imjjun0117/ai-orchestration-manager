@@ -20,7 +20,10 @@ const {
 } = require("../src/memory/sourceService");
 const { replayContextManifest, shadowQuality } = require("../src/memory/contextPackageService");
 
-const MIGRATION_ID = "023_phase18_tiered_memory";
+const MIGRATION_IDS = Object.freeze([
+  "023_phase18_tiered_memory",
+  "024_phase18_runtime_task_grants",
+]);
 
 function usage() {
   console.log([
@@ -47,14 +50,22 @@ function readRequest(argument, command) {
 }
 
 async function status() {
-  const { rows: migrationRows } = await db.query("SELECT id, checksum, applied_at FROM schema_migrations WHERE id = $1", [MIGRATION_ID]);
+  const { rows: migrationRows } = await db.query(
+    "SELECT id, checksum, applied_at FROM schema_migrations WHERE id = ANY($1) ORDER BY id",
+    [MIGRATION_IDS]
+  );
   const { rows: phaseRows } = await db.query(
     "SELECT id, status, accepted_at, row_version FROM delivery_phases WHERE id IN ('phase-17','phase-18') ORDER BY id"
   );
-  const migration = migrationRows[0] || null;
+  const migrationMap = new Map(migrationRows.map((row) => [row.id, row]));
+  const migrations = MIGRATION_IDS.map((id) => migrationMap.get(id) || null);
+  const migration = migrationMap.get(MIGRATION_IDS[0]) || null;
   return {
     mode: memoryMode(),
     migration: migration ? { id: migration.id, appliedAt: migration.applied_at } : null,
+    migrations: migrations.map((row, index) => (
+      row ? { id: row.id, appliedAt: row.applied_at } : { id: MIGRATION_IDS[index], appliedAt: null }
+    )),
     phases: phaseRows,
     inventory: migration ? await memoryInventory({ db }) : null,
     shadowQuality: migration ? await shadowQuality({ db }) : null,
@@ -68,7 +79,9 @@ async function readiness() {
   const phase18 = current.phases.find((phase) => phase.id === "phase-18");
   if (!phase17 || !["ACCEPTED", "ACCEPTED_WITH_DEBT"].includes(phase17.status)) blockers.push("Phase 17 Gate is not accepted");
   if (!phase18) blockers.push("Phase 18 delivery phase does not exist");
-  if (!current.migration) blockers.push("Phase 18 migration is not applied");
+  for (const migration of current.migrations) {
+    if (!migration.appliedAt) blockers.push(`Phase 18 migration is not applied: ${migration.id}`);
+  }
   if (current.inventory && Number(current.inventory.expired_sources) > 0) blockers.push("expired memory sources require retention purge");
   if (current.mode === "enforced" && (!phase18 || !["ACCEPTED", "ACCEPTED_WITH_DEBT"].includes(phase18.status))) {
     blockers.push("enforced memory mode requires an accepted Phase 18 Gate");
@@ -88,7 +101,10 @@ async function main() {
   const flags = new Set([argument, ...rest].filter(Boolean));
   if (!command || command === "--help" || command === "-h") return usage();
   let result;
-  if (command === "migrate") result = await migrateUp(MIGRATION_ID);
+  if (command === "migrate") {
+    result = [];
+    for (const migrationId of MIGRATION_IDS) result.push(await migrateUp(migrationId));
+  }
   else if (command === "status") result = await status();
   else if (command === "readiness") result = await readiness();
   else if (command === "ingest") result = await ingestMemorySource(readRequest(argument, command), { db });
@@ -105,7 +121,10 @@ async function main() {
       throw new Error("rollback requires --allow-destructive and --confirm-phase18");
     }
     if (memoryMode() !== "off") throw new Error("TIERED_MEMORY_MODE must be off before rollback");
-    result = await migrateDown(MIGRATION_ID, { allowDestructive: true });
+    result = [];
+    for (const migrationId of [...MIGRATION_IDS].reverse()) {
+      result.push(await migrateDown(migrationId, { allowDestructive: true }));
+    }
   } else {
     throw new Error(`unknown Phase 18 command: ${command}`);
   }
