@@ -3,7 +3,7 @@ const db = require("../db");
 const { revokeInstanceBoundToken } = require("../channels/channelCredentialService");
 const { resolveRuntimeCredential } = require("../channels/runtimeCredentialEnrollment");
 const { createDiscordPublicationTransport } = require("../discord/discordPublicationTransport");
-const { assertRoleModeAllowed } = require("./featureFlags");
+const { assertRoleModeAllowed, assertTieredMemoryModeAllowed } = require("./featureFlags");
 const instanceService = require("./instanceService");
 const { OutboxDispatcher } = require("./outboxDispatcher");
 
@@ -29,6 +29,7 @@ async function bootRuntime(config, {
   revokeCredential = revokeInstanceBoundToken,
 } = {}) {
   await assertRoleModeAllowed({ db: database });
+  await assertTieredMemoryModeAllowed({ db: database });
   if (config.mode === "off") throw new Error("role bot entrypoints require MULTIBOT_ROLE_MODE=shadow|enforced");
   let registered = false;
   let identity;
@@ -65,7 +66,7 @@ async function bootRuntime(config, {
   });
   const heartbeatTimer = setInterval(() => instanceService.heartbeat({
     instanceId: config.instanceId, status: null,
-    cliHealth: { executionMode: config.executionMode }, workspaceHealth: {},
+    cliHealth: { executionMode: config.executionMode, memoryMode: config.memoryMode }, workspaceHealth: {},
   }, { db: database }).catch((error) => console.error(`[${config.instanceId}] heartbeat: ${error.message}`)), config.heartbeatMs);
   heartbeatTimer.unref?.();
   const outboxTimer = setInterval(() => outbox.tick().catch((error) => console.error(`[${config.instanceId}] outbox: ${error.message}`)), config.jobPollMs);

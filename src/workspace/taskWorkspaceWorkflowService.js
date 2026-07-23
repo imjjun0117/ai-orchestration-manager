@@ -132,6 +132,7 @@ async function prepareTaskWorkspace(
     allowedTools = ["codex"],
     riskLevel = "unknown",
     constraints = {},
+    memoryContextManifestHash = null,
     isolationRoot,
     leaseTtlMs = 30 * 60 * 1000,
     shadowMode = false,
@@ -157,6 +158,7 @@ async function prepareTaskWorkspace(
     allowedTools,
     riskLevel,
     constraints,
+    memoryContextManifestHash,
   });
   const effectiveIsolationRoot = isolationRoot
     || env.ISOLATED_WORKSPACE_ROOT

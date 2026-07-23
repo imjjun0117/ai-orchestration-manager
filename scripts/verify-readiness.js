@@ -19,6 +19,7 @@ const phase17EnrollmentMigrationPath = path.join(repoRoot, "src/db/migrations/01
 const phase17ReconciliationMigrationPath = path.join(repoRoot, "src/db/migrations/020_phase17_operator_reconciliation.up.sql");
 const phase17WorkflowApprovalMigrationPath = path.join(repoRoot, "src/db/migrations/021_phase17_workflow_approvals.up.sql");
 const phase17CanaryHardeningMigrationPath = path.join(repoRoot, "src/db/migrations/022_phase17_canary_hardening.up.sql");
+const phase18MemoryMigrationPath = path.join(repoRoot, "src/db/migrations/023_phase18_tiered_memory.up.sql");
 const botRuntimePath = path.join(repoRoot, "bot-runtime.js");
 const phase16CliPath = path.join(repoRoot, "scripts/phase16-workspace.js");
 const phase16SandboxPath = path.join(repoRoot, "src/workspace/sandboxService.js");
@@ -81,6 +82,7 @@ const REQUIRED_DB_COLUMNS = {
     "current_owner_instance_id",
     "control_state",
     "row_version",
+    "memory_project_key",
   ],
   command_logs: ["timed_out", "killed"],
   workspace_locks: [
@@ -161,6 +163,26 @@ const REQUIRED_DB_COLUMNS = {
     "reason", "evidence_ref", "before_status", "after_status", "before_revision",
     "after_revision", "snapshot_json", "created_at",
   ],
+  memory_sources: [
+    "id", "project_key", "task_id", "tier", "owner_ref", "security_classification",
+    "retention_days", "current_version", "current_content_hash", "status", "conflict_state",
+  ],
+  memory_source_versions: [
+    "source_id", "source_version", "content_hash", "ingestion_hash", "content_text",
+    "index_revision", "status", "prompt_injection_detected",
+  ],
+  memory_source_acl: ["source_id", "role", "can_retrieve", "granted_by"],
+  memory_items: [
+    "id", "source_id", "source_version", "index_revision", "tier", "ordinal",
+    "content_hash", "content_text", "embedding_json", "token_count", "status",
+  ],
+  memory_provenance_edges: ["derived_source_id", "source_id", "source_version", "source_item_id"],
+  memory_context_manifests: [
+    "id", "task_id", "role_job_id", "role", "project_key", "mode", "status",
+    "manifest_hash", "context_package_hash", "legacy_context_hash", "manifest_json", "evidence_json",
+  ],
+  memory_shadow_reports: ["context_manifest_id", "task_id", "role", "tiered_context_hash"],
+  memory_events: ["source_id", "source_version", "task_id", "role_job_id", "event_type", "event_payload"],
 };
 
 function parseArgs(argv) {
@@ -291,6 +313,14 @@ function checkPackageScripts() {
     "test:phase16",
     "test:phase16:db",
     "test:phase16:container",
+    "phase17",
+    "migrate:phase17",
+    "test:phase17",
+    "test:phase17:db",
+    "phase18",
+    "migrate:phase18",
+    "test:phase18",
+    "test:phase18:db",
   ];
   for (const script of requiredScripts) {
     assert(scripts[script], `package.json is missing script: ${script}`);
@@ -446,6 +476,25 @@ function checkSchemaStatic() {
       `Phase 17 canary hardening migration is missing required snippet: ${snippet}`
     );
   }
+  assert(fs.existsSync(phase18MemoryMigrationPath), "Phase 18 tiered-memory migration is missing");
+  const phase18MemoryMigration = fs.readFileSync(phase18MemoryMigrationPath, "utf8");
+  for (const snippet of [
+    "CREATE TABLE memory_sources",
+    "CREATE TABLE memory_source_versions",
+    "CREATE TABLE memory_source_acl",
+    "CREATE TABLE memory_items",
+    "CREATE TABLE memory_provenance_edges",
+    "CREATE TABLE memory_context_manifests",
+    "CREATE TABLE memory_shadow_reports",
+    "CREATE TABLE memory_events",
+    "retrieve_phase18_memory_candidates",
+    "inspect_phase18_memory_evidence",
+    "record_phase18_context_manifest",
+    "replay_phase18_context_manifest",
+    "REVOKE ALL ON TABLE",
+  ]) {
+    assert(phase18MemoryMigration.includes(snippet), `Phase 18 migration is missing required snippet: ${snippet}`);
+  }
   const botRuntime = fs.readFileSync(botRuntimePath, "utf8");
   for (const snippet of [
     "workspaceWorkflowService.runCoderStage",
@@ -498,6 +547,10 @@ function checkDocs() {
     "PHASE17.md",
     "docs/phase17/requirements-trace.md",
     "docs/phase17/rollback-plan.md",
+    "PHASE18.md",
+    "docs/phase18/requirements-trace.md",
+    "docs/phase18/rollback-plan.md",
+    "docs/phase18/known-issues.md",
   ];
   for (const doc of requiredDocs) {
     assert(fs.existsSync(path.join(repoRoot, doc)), `${doc} is missing`);
@@ -568,7 +621,19 @@ async function checkLiveDatabase() {
       "append_phase17_command_log",
       "phase17_sync_rejected_task_status",
     ];
-    const requiredFunctions = [...requiredPhase15Functions, ...requiredPhase16Functions, ...requiredPhase17Functions];
+    const requiredPhase18Functions = [
+      "phase18_claim_authorized",
+      "retrieve_phase18_memory_candidates",
+      "inspect_phase18_memory_evidence",
+      "record_phase18_context_manifest",
+      "replay_phase18_context_manifest",
+    ];
+    const requiredFunctions = [
+      ...requiredPhase15Functions,
+      ...requiredPhase16Functions,
+      ...requiredPhase17Functions,
+      ...requiredPhase18Functions,
+    ];
     const { rows: functionRows } = await db.query(
       `SELECT DISTINCT proname
        FROM pg_proc
@@ -598,6 +663,7 @@ async function checkLiveDatabase() {
          AND grantee = 'PUBLIC'
          AND (
            table_name LIKE 'delivery_%' OR table_name LIKE 'phase_%' OR table_name = 'channel_credentials'
+           OR table_name LIKE 'memory_%'
            OR table_name IN ('workspace_lock_heads', 'workspace_leases', 'isolated_workspaces', 'artifacts', 'workspace_finalizations', 'workspace_safety_events')
          )`
     );
@@ -643,6 +709,28 @@ async function checkLiveDatabase() {
       );
     }
 
+    const { rows: memoryGrants } = await db.query(
+      `SELECT db_principal, bot_role,
+              has_function_privilege(db_principal, 'public.retrieve_phase18_memory_candidates(text,text,text,text,text,integer)', 'EXECUTE') AS can_retrieve,
+              has_function_privilege(db_principal, 'public.inspect_phase18_memory_evidence(text,text,text,text,integer)', 'EXECUTE') AS can_inspect,
+              has_function_privilege(db_principal, 'public.record_phase18_context_manifest(text,text,text,text,text,text,text,text,text,text,text,text,integer,integer,integer,integer,integer,jsonb,text,jsonb,text)', 'EXECUTE') AS can_record,
+              has_table_privilege(db_principal, 'public.memory_sources', 'SELECT') AS can_read_sources,
+              has_table_privilege(db_principal, 'public.memory_items', 'SELECT') AS can_read_items,
+              has_table_privilege(db_principal, 'public.memory_context_manifests', 'INSERT') AS can_insert_manifest
+       FROM bot_role_principals WHERE enabled`
+    );
+    for (const grant of memoryGrants) {
+      if (grant.bot_role === "manager") {
+        assert(!grant.can_retrieve && !grant.can_inspect && !grant.can_record, "Manager must not receive worker memory functions");
+      } else {
+        assert(grant.can_retrieve && grant.can_inspect && grant.can_record, `Phase 18 bounded functions are incomplete for ${grant.db_principal}`);
+      }
+      assert(
+        !grant.can_read_sources && !grant.can_read_items && !grant.can_insert_manifest,
+        `Phase 18 principal has broad memory-table privileges: ${grant.db_principal}`
+      );
+    }
+
     const { rows: phase16TriggerRows } = await db.query(
       `SELECT tgname
        FROM pg_trigger
@@ -681,6 +769,30 @@ async function checkLiveDatabase() {
     ]) {
       assert(phase17Triggers.has(triggerName), `live DB is missing required Phase 17 trigger ${triggerName}`);
     }
+    const { rows: phase18TriggerRows } = await db.query(
+      `SELECT tgname FROM pg_trigger WHERE NOT tgisinternal AND tgname = ANY($1)`,
+      [[
+        "trg_phase18_assign_task_project_key",
+        "trg_phase18_guard_source_mutation",
+        "trg_phase18_guard_version_mutation",
+        "trg_phase18_guard_item_mutation",
+        "trg_phase18_context_manifest_append_only",
+        "trg_phase18_shadow_report_append_only",
+        "trg_phase18_memory_event_append_only",
+      ]]
+    );
+    const phase18Triggers = new Set(phase18TriggerRows.map((row) => row.tgname));
+    for (const triggerName of [
+      "trg_phase18_assign_task_project_key",
+      "trg_phase18_guard_source_mutation",
+      "trg_phase18_guard_version_mutation",
+      "trg_phase18_guard_item_mutation",
+      "trg_phase18_context_manifest_append_only",
+      "trg_phase18_shadow_report_append_only",
+      "trg_phase18_memory_event_append_only",
+    ]) {
+      assert(phase18Triggers.has(triggerName), `live DB is missing required Phase 18 trigger ${triggerName}`);
+    }
 
     const { checksum } = require("../src/db/migrationRunner");
     const migrationChecksums = new Map([
@@ -691,6 +803,7 @@ async function checkLiveDatabase() {
       ["020_phase17_operator_reconciliation", checksum(fs.readFileSync(phase17ReconciliationMigrationPath, "utf8"))],
       ["021_phase17_workflow_approvals", checksum(fs.readFileSync(phase17WorkflowApprovalMigrationPath, "utf8"))],
       ["022_phase17_canary_hardening", checksum(fs.readFileSync(phase17CanaryHardeningMigrationPath, "utf8"))],
+      ["023_phase18_tiered_memory", checksum(fs.readFileSync(phase18MemoryMigrationPath, "utf8"))],
     ]);
     const { rows: migrationRows } = await db.query(
       `SELECT id, checksum FROM schema_migrations WHERE id = ANY($1)`,

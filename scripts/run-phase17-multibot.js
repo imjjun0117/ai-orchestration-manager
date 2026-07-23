@@ -80,13 +80,16 @@ function validateExecutionTopology(
 ) {
   const modes = new Set(configs.map((config) => config.mode));
   const executionModes = new Set(configs.map((config) => config.executionMode));
+  const memoryModes = new Set(configs.map((config) => config.memoryMode || "off"));
   if (modes.size !== 1) throw new Error("all six role profiles must use the same MULTIBOT_ROLE_MODE");
   if (executionModes.size !== 1) throw new Error("all six role profiles must use the same ROLE_WORKER_EXECUTION");
+  if (memoryModes.size !== 1) throw new Error("all six role profiles must use the same TIERED_MEMORY_MODE");
   const [mode] = modes;
   const [executionMode] = executionModes;
+  const [memoryMode] = memoryModes;
   if (mode !== "enforced") {
     if (executionMode === "active") throw new Error("ROLE_WORKER_EXECUTION=active requires MULTIBOT_ROLE_MODE=enforced");
-    return { mode, executionMode };
+    return { mode, executionMode, memoryMode };
   }
   if (executionMode !== "active") {
     throw new Error("MULTIBOT_ROLE_MODE=enforced requires ROLE_WORKER_EXECUTION=active for all six profiles");
@@ -149,6 +152,7 @@ function validateExecutionTopology(
     qaImage: image,
     finalizerActorId,
     plannerModel,
+    memoryMode,
   };
 }
 

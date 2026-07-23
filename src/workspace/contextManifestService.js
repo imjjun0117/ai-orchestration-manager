@@ -26,6 +26,7 @@ function buildExecutionContextManifest({
   riskLevel = "unknown",
   policyVersion = "phase16-v1",
   constraints = {},
+  memoryContextManifestHash = null,
 }) {
   if (!String(taskId || "").trim()) throw new Error("context taskId is required");
   if (!String(originalRequest || "").trim()) throw new Error("context originalRequest is required");
@@ -49,7 +50,12 @@ function buildExecutionContextManifest({
     riskLevel: String(riskLevel || "unknown"),
     policyVersion: String(policyVersion),
     constraints: constraints && typeof constraints === "object" && !Array.isArray(constraints) ? constraints : {},
+    memoryContextManifestHash: memoryContextManifestHash === null ? null : String(memoryContextManifestHash),
   };
+  if (manifest.memoryContextManifestHash !== null
+      && !/^sha256:[0-9a-f]{64}$/.test(manifest.memoryContextManifestHash)) {
+    throw new Error("memoryContextManifestHash must use sha256:<lowercase hex>");
+  }
   return {
     manifest,
     contextManifestHash: sha256Bytes(Buffer.from(canonicalJson(manifest), "utf8")),

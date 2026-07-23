@@ -1,4 +1,5 @@
 const crypto = require("node:crypto");
+const { memoryMode } = require("../memory/memoryPolicy");
 
 const ROLES = Object.freeze(["manager", "planner", "coder", "reviewer", "qa", "summarizer"]);
 const MODES = Object.freeze(["off", "shadow", "enforced"]);
@@ -40,6 +41,7 @@ function loadRoleConfig(env = process.env) {
     jobLeaseMs: positiveInteger("ROLE_JOB_LEASE_MS", env.ROLE_JOB_LEASE_MS, 60_000),
     jobPollMs: positiveInteger("ROLE_JOB_POLL_MS", env.ROLE_JOB_POLL_MS, 1_000),
     executionMode: executionMode(env),
+    memoryMode: memoryMode(env),
   });
 }
 

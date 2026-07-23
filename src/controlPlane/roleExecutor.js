@@ -10,6 +10,7 @@ const dbDefault = require("../db");
 const workspaceWorkflow = require("../workspace/taskWorkspaceWorkflowService");
 const workspaceSandbox = require("../workspace/sandboxService");
 const { storeResultArtifact } = require("./resultArtifactService");
+const { buildRoleContext } = require("../memory/contextPackageService");
 
 const execFileAsync = promisify(execFile);
 const SAFE_ADAPTERS = Object.freeze({ planner: claudeAdapter, reviewer: geminiAdapter, summarizer: gemmaAdapter });
@@ -35,7 +36,9 @@ function allowedPaths(env) {
 async function executeSafeRole(job, config, { db = dbDefault, env = process.env } = {}) {
   const adapter = SAFE_ADAPTERS[config.role];
   if (!adapter) throw new Error(`no safe adapter for role ${config.role}`);
-  const result = await adapter.invoke(jobPrompt(job), { workspaceDir: env.WORKSPACE_DIR || process.cwd(), taskId: job.task_id });
+  const legacyPrompt = jobPrompt(job);
+  const context = await buildRoleContext(job, config, legacyPrompt, { db, env });
+  const result = await adapter.invoke(context.prompt, { workspaceDir: env.WORKSPACE_DIR || process.cwd(), taskId: job.task_id });
   if (result.exitCode !== 0) {
     const error = new Error(result.raw.errorMessage || result.raw.stderr || `${config.role} adapter failed`);
     error.code = result.raw.errorCode || "ROLE_ADAPTER_FAILED";
@@ -43,9 +46,24 @@ async function executeSafeRole(job, config, { db = dbDefault, env = process.env 
   }
   const artifact = await storeResultArtifact({
     taskId: job.task_id, role: config.role, jobType: job.job_type,
-    result: { text: result.text, durationMs: result.durationMs }, createdBy: config.instanceId,
+    result: {
+      text: result.text,
+      durationMs: result.durationMs,
+      memoryContextManifestHash: context.manifestHash,
+      memoryMode: context.mode,
+      memoryFallbackCode: context.fallbackCode || null,
+    },
+    createdBy: config.instanceId,
   }, { db });
-  return { outputArtifactId: artifact.id, result: { text: result.text, artifactHash: artifact.artifact_hash } };
+  return {
+    outputArtifactId: artifact.id,
+    result: {
+      text: result.text,
+      artifactHash: artifact.artifact_hash,
+      memoryContextManifestHash: context.manifestHash,
+      memoryMode: context.mode,
+    },
+  };
 }
 
 async function executeCoder(job, config, { db = dbDefault, env = process.env } = {}) {
@@ -63,6 +81,8 @@ async function executeCoder(job, config, { db = dbDefault, env = process.env } =
   const { rows } = await db.query("SELECT status, row_version, original_request FROM tasks WHERE id = $1", [job.task_id]);
   const task = rows[0];
   if (!task) throw new Error(`task ${job.task_id} does not exist`);
+  const legacyPrompt = jobPrompt(job);
+  const context = await buildRoleContext(job, config, legacyPrompt, { db, env });
   const baseCommitSha = (await execFileAsync("git", ["-C", canonicalRepository, "rev-parse", "HEAD"])).stdout.trim();
   const prepared = await workspaceWorkflow.runCoderStage({
     taskId: job.task_id,
@@ -73,7 +93,8 @@ async function executeCoder(job, config, { db = dbDefault, env = process.env } =
     ownerInstanceId: config.instanceId,
     ownerOperationId: `phase17-${job.id}-${job.attempt_count}`,
     originalRequest: task.original_request,
-    instruction: jobPrompt(job),
+    instruction: legacyPrompt,
+    memoryContextManifestHash: context.manifestHash,
     allowedPaths: allowedPaths(env),
     allowedTools: ["codex"],
     shadowMode: false,
@@ -81,7 +102,7 @@ async function executeCoder(job, config, { db = dbDefault, env = process.env } =
     db,
     env,
     runCoder: async ({ cwd }) => {
-      const adapterResult = await codexAdapter.invoke(jobPrompt(job), { workspaceDir: cwd, taskId: job.task_id });
+      const adapterResult = await codexAdapter.invoke(context.prompt, { workspaceDir: cwd, taskId: job.task_id });
       if (adapterResult.exitCode !== 0) throw new Error(adapterResult.raw.errorMessage || adapterResult.raw.stderr || "coder adapter failed");
       return adapterResult;
     },
@@ -102,6 +123,8 @@ async function executeCoder(job, config, { db = dbDefault, env = process.env } =
       text: prepared.result.text,
       artifactHash: candidate.artifact.artifact_hash,
       approvalId: candidate.approval.id,
+      memoryContextManifestHash: context.manifestHash,
+      memoryMode: context.mode,
     },
   };
 }
@@ -125,6 +148,8 @@ async function executeQa(
   );
   const input = rows[0];
   if (!input) throw new Error("QA input artifact has no isolated workspace");
+  const legacyPrompt = jobPrompt(job);
+  const context = await buildRoleContext(job, config, legacyPrompt, { db, env });
   const script = String(env.QA_NPM_SCRIPT || "test").trim();
   if (!/^[a-zA-Z0-9:_-]+$/.test(script)) throw new Error("QA_NPM_SCRIPT contains unsupported characters");
   const result = await runSandboxed({
@@ -148,10 +173,21 @@ async function executeQa(
         network: result.policy.network,
         rootFilesystem: result.policy.rootFilesystem,
       },
+      memoryContextManifestHash: context.manifestHash,
+      memoryMode: context.mode,
+      memoryFallbackCode: context.fallbackCode || null,
     },
     createdBy: config.instanceId,
   }, { db });
-  return { outputArtifactId: artifact.id, result: { passed: true, artifactHash: artifact.artifact_hash } };
+  return {
+    outputArtifactId: artifact.id,
+    result: {
+      passed: true,
+      artifactHash: artifact.artifact_hash,
+      memoryContextManifestHash: context.manifestHash,
+      memoryMode: context.mode,
+    },
+  };
 }
 
 async function executeRoleJob(job, config, options = {}) {
@@ -173,4 +209,4 @@ async function executeRoleJob(job, config, options = {}) {
   return executeSafeRole(job, config, options);
 }
 
-module.exports = { executeQa, executeRoleJob, jobPrompt };
+module.exports = { executeCoder, executeQa, executeRoleJob, executeSafeRole, jobPrompt };

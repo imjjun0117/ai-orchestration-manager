@@ -11,6 +11,8 @@ const {
   adoptLegacyCredentials,
   bootstrapRoles,
   importCandidateCredentials,
+  phase18WorkerFunctions,
+  provisionOnClient,
   readiness,
   reconcile,
   reconciliationInventory,
@@ -493,6 +495,30 @@ test("role grants keep Manager transaction APIs away from workers", () => {
   assert.equal(roleFunctions("planner").some((signature) => signature.startsWith("receive_discord_command")), false);
   assert.equal(roleFunctions("manager").some((signature) => signature.startsWith("receive_discord_command")), true);
   assert.equal(roleFunctions("coder").some((signature) => signature.startsWith("acquire_workspace_lease")), true);
+});
+
+test("role provisioning synchronizes Phase 18 grants after the memory migration", async () => {
+  const queries = [];
+  const client = {
+    async query(sql) {
+      queries.push(sql);
+      if (sql.includes("SELECT 1 FROM pg_roles")) return { rows: [{ exists: 1 }] };
+      if (sql.includes("023_phase18_tiered_memory")) return { rows: [{ applied: 1 }] };
+      return { rows: [] };
+    },
+  };
+  await provisionOnClient(client, "new_planner_db", "planner");
+  for (const signature of phase18WorkerFunctions()) {
+    assert.equal(queries.includes(`REVOKE EXECUTE ON FUNCTION ${signature} FROM "new_planner_db"`), true);
+    assert.equal(queries.includes(`GRANT EXECUTE ON FUNCTION ${signature} TO "new_planner_db"`), true);
+  }
+
+  queries.length = 0;
+  await provisionOnClient(client, "new_manager_db", "manager");
+  for (const signature of phase18WorkerFunctions()) {
+    assert.equal(queries.includes(`REVOKE EXECUTE ON FUNCTION ${signature} FROM "new_manager_db"`), true);
+    assert.equal(queries.includes(`GRANT EXECUTE ON FUNCTION ${signature} TO "new_manager_db"`), false);
+  }
 });
 
 test("role bootstrap creates six fail-closed principals and secret-safe shadow profiles", async () => {

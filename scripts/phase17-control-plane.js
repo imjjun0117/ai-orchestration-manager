@@ -89,6 +89,14 @@ function roleFunctions(role) {
   return functions;
 }
 
+function phase18WorkerFunctions() {
+  return [
+    "retrieve_phase18_memory_candidates(TEXT,TEXT,TEXT,TEXT,TEXT,INTEGER)",
+    "inspect_phase18_memory_evidence(TEXT,TEXT,TEXT,TEXT,INTEGER)",
+    "record_phase18_context_manifest(TEXT,TEXT,TEXT,TEXT,TEXT,TEXT,TEXT,TEXT,TEXT,TEXT,TEXT,TEXT,INTEGER,INTEGER,INTEGER,INTEGER,INTEGER,JSONB,TEXT,JSONB,TEXT)",
+  ];
+}
+
 async function provisionOnClient(client, principal, role, { verifyExists = true } = {}) {
   if (!ROLES.includes(role)) throw new Error(`role must be one of: ${ROLES.join(", ")}`);
   const quoted = identifier(principal);
@@ -105,6 +113,15 @@ async function provisionOnClient(client, principal, role, { verifyExists = true 
   await client.query(`GRANT USAGE ON SCHEMA public TO ${quoted}`);
   for (const signature of [...commonFunctions(), ...roleFunctions(role)]) {
     await client.query(`GRANT EXECUTE ON FUNCTION ${signature} TO ${quoted}`);
+  }
+  const phase18Applied = await client.query(
+    "SELECT 1 FROM schema_migrations WHERE id = '023_phase18_tiered_memory'"
+  );
+  if (phase18Applied.rows[0]) {
+    for (const signature of phase18WorkerFunctions()) {
+      await client.query(`REVOKE EXECUTE ON FUNCTION ${signature} FROM ${quoted}`);
+      if (role !== "manager") await client.query(`GRANT EXECUTE ON FUNCTION ${signature} TO ${quoted}`);
+    }
   }
   await client.query(`GRANT SELECT (id, channel_id, status, row_version, original_request) ON tasks TO ${quoted}`);
   await client.query(`GRANT SELECT, INSERT, UPDATE ON discord_publications TO ${quoted}`);
@@ -616,6 +633,7 @@ module.exports = {
   migratePhase17,
   provision,
   provisionOnClient,
+  phase18WorkerFunctions,
   readiness,
   reconcile,
   reconciliationInventory,

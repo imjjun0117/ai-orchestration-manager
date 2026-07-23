@@ -26,6 +26,7 @@ The Phase 17 DB suite covers PUBLIC privilege revocation, principal-role negativ
 - migration `022_phase17_canary_hardening`은 역할 DB principal에 테이블 전체 쓰기 권한을 주지 않는다. 실행 중인 자기 claim/task에 한해서만 skill 조회, PID 기록/정리, command log 추가를 허용하며 다른 task와 완료된 claim은 거부한다.
 - workflow run이 `REJECTED`로 전환되면 레거시 `tasks.status`와 `lifecycle_status`를 함께 동기화하고, readiness가 남은 불일치를 차단한다.
 - 사유 없는 `!reject` 등 안전하게 설명 가능한 승인 오류는 감사 가능한 Manager outbox 응답으로 한글 사용법을 돌려준다.
+- 실제 Discord enforced 카나리: PASS — 사유 없는 `!reject`가 한글 사용법을 반환했고, Opus 4.8 Planner가 한글 계획을 생성한 뒤 bound node 반려가 workflow run, approval, task status/lifecycle 모두 `REJECTED`로 동기화되었다. 최종 queue/outbox/reconciliation/inconsistent terminal task는 모두 0건이었다.
 
 Enrollment verification covers the `node bot.js` six-role bulk wizard plus direct role-node fallback, hidden TTY prompting, AES-GCM storage, plaintext absence from DB parameters/output, ACTIVE preserve/replace, six-target duplicate rejection, non-TTY fail-closed behavior, invalid-token revocation, immediate pool cleanup, and live execute privileges for all six role principals. A live QA TTY launch displayed the hidden prompt and was cancelled without entering or storing a token; the instance returned to `OFFLINE`.
 

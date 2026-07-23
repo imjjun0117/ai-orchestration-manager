@@ -7,12 +7,13 @@ const { preflight, validateExecutionTopology } = require("../../scripts/run-phas
 
 const ROLES = ["manager", "planner", "coder", "reviewer", "qa", "summarizer"];
 
-function configs({ mode = "shadow", executionMode = "dry-run" } = {}) {
+function configs({ mode = "shadow", executionMode = "dry-run", memoryMode = "off" } = {}) {
   return ROLES.map((role) => ({
     role,
     instanceId: `${role}-01`,
     mode,
     executionMode,
+    memoryMode,
     parsed: {
       ...(role === "manager" || role === "coder" || role === "qa" ? {
         ISOLATED_WORKSPACE_MODE: "true",
@@ -52,7 +53,7 @@ function fakeFileSystem({ isolationMode = 0o40700 } = {}) {
 }
 
 test("active six-role topology requires enforced mode, a bare canonical repo, and a local QA image", () => {
-  assert.deepEqual(validateExecutionTopology(configs()), { mode: "shadow", executionMode: "dry-run" });
+  assert.deepEqual(validateExecutionTopology(configs()), { mode: "shadow", executionMode: "dry-run", memoryMode: "off" });
   const active = configs({ mode: "enforced", executionMode: "active" });
   let inspected = null;
   const result = validateExecutionTopology(active, {
@@ -66,6 +67,7 @@ test("active six-role topology requires enforced mode, a bare canonical repo, an
   assert.equal(result.isolationRoot, "/private/isolated");
   assert.equal(result.finalizerActorId, "manager-01");
   assert.equal(result.plannerModel, "claude-opus-4-8");
+  assert.equal(result.memoryMode, "off");
   assert.equal(inspected, "sha256:abcdef1234567890");
 });
 
@@ -73,6 +75,9 @@ test("active topology fails closed for mixed modes and unsafe execution prerequi
   const mixed = configs();
   mixed[0].mode = "enforced";
   assert.throws(() => validateExecutionTopology(mixed), /same MULTIBOT_ROLE_MODE/);
+  const mixedMemory = configs();
+  mixedMemory[0].memoryMode = "shadow";
+  assert.throws(() => validateExecutionTopology(mixedMemory), /same TIERED_MEMORY_MODE/);
   assert.throws(
     () => validateExecutionTopology(configs({ mode: "enforced", executionMode: "dry-run" })),
     /requires ROLE_WORKER_EXECUTION=active/
@@ -255,7 +260,12 @@ test("QA execution always uses the registered network-denied container sandbox",
   });
   assert.deepEqual(output, {
     outputArtifactId: "qa-output",
-    result: { passed: true, artifactHash: "sha256:output" },
+    result: {
+      passed: true,
+      artifactHash: "sha256:output",
+      memoryContextManifestHash: null,
+      memoryMode: "off",
+    },
   });
 });
 
